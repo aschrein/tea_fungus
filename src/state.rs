@@ -1,7 +1,7 @@
 extern crate lzma;
 use lzma::LzmaWriter;
+extern crate cgmath;
 extern crate bincode;
-extern crate nalgebra as na;
 extern crate rand;
 extern crate serde;
 
@@ -9,37 +9,13 @@ use bincode::{
     config, deserialize, deserialize_from, deserialize_in_place, serialize, serialized_size,
     ErrorKind, Result,
 };
-use na::{Rotation, Rotation3, Vector3};
+use cgmath::{Matrix3, Matrix4, Point3, Rad, Vector3};
 use serde::de::Deserializer;
 use serde::ser::{SerializeSeq, Serializer};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::prelude::*;
 type vec3 = Vector3<f32>;
-#[derive(Serialize, Deserialize)]
-#[serde(remote = "vec3")]
-struct vec3Def {
-    x: f32,
-    y: f32,
-    z: f32,
-}
-fn vec_serialize<S>(vec: &Vec<vec3>, s: S) -> std::result::Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    #[derive(Serialize)]
-    struct Wrapper(#[serde(with = "vec3Def")] vec3);
-    Vec::serialize(&vec.into_iter().map(|a| Wrapper(*a)).collect(), s)
-}
-fn vec_deserialize<'de, D>(d: D) -> std::result::Result<Vec<vec3>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    #[derive(Deserialize)]
-    struct Wrapper(#[serde(with = "vec3Def")] vec3);
-    let v = Vec::deserialize(d)?;
-    Ok(v.into_iter().map(|Wrapper(a)| a).collect())
-}
 pub struct Sim_Params {
     rest_length: f32,
     spring_factor: f32,
@@ -51,7 +27,6 @@ pub struct Sim_Params {
 }
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Sim_State {
-    #[serde(serialize_with = "vec_serialize", deserialize_with = "vec_deserialize")]
     pos: Vec<vec3>,
     links: Vec<(u32, u32)>,
 }
