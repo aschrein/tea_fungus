@@ -26,7 +26,7 @@ use vulkano::instance::debug::{DebugCallback, MessageTypes};
 use vulkano::instance::Instance;
 use vulkano::instance::InstanceExtensions;
 use vulkano::instance::PhysicalDevice;
-use vulkano::pipeline::vertex::TwoBuffersDefinition;
+use vulkano::pipeline::vertex::{SingleBufferDefinition, TwoBuffersDefinition};
 use vulkano::pipeline::viewport::Viewport;
 use vulkano::pipeline::{GraphicsPipeline, GraphicsPipelineAbstract};
 use vulkano::swapchain;
@@ -53,9 +53,9 @@ mod vs {
         #version 450
 
         layout(location = 0) in vec3 position;
-        layout(location = 1) in vec3 normal;
+        // layout(location = 1) in vec3 normal;
 
-        layout(location = 0) out vec3 v_normal;
+        // layout(location = 0) out vec3 v_normal;
 
         layout(set = 0, binding = 0) uniform Data {
             mat4 world;
@@ -65,7 +65,7 @@ mod vs {
 
         void main() {
             mat4 worldview = uniforms.view * uniforms.world;
-            v_normal = transpose(inverse(mat3(worldview))) * normal;
+            // v_normal = transpose(inverse(mat3(worldview))) * normal;
             gl_Position = uniforms.proj * worldview * vec4(position, 1.0);
         }
         "
@@ -78,15 +78,15 @@ mod fs {
         src: "
         #version 450
 
-        layout(location = 0) in vec3 v_normal;
+        // layout(location = 0) in vec3 v_normal;
         layout(location = 0) out vec4 f_color;
 
         const vec3 LIGHT = vec3(0.0, 0.0, 1.0);
 
         void main() {
-            float brightness = dot(normalize(v_normal), normalize(LIGHT));
-            vec3 dark_color = vec3(0.6, 0.0, 0.0);
-            vec3 regular_color = vec3(1.0, 0.0, 0.0);
+            float brightness = 0.5f; // dot(normalize(v_normal), normalize(LIGHT));
+            vec3 dark_color = vec3(0.0, 0.0, 0.0);
+            vec3 regular_color = vec3(1.0, 1.0, 1.0);
 
             f_color = vec4(mix(dark_color, regular_color, brightness), 1.0);
         }
@@ -94,10 +94,24 @@ mod fs {
     }
 }
 
+#[derive(Copy, Clone)]
+pub struct Vertex {
+    position: (f32, f32, f32),
+}
+
+impl_vertex!(Vertex, position);
+
+#[derive(Copy, Clone)]
+pub struct Normal {
+    normal: (f32, f32, f32),
+}
+
+impl_vertex!(Normal, normal);
+
 pub fn render_main() {
     let instance = {
         let mut extensions = vulkano_win::required_extensions();
-        extensions.ext_debug_report = true;
+        // extensions.ext_debug_report = true;
 
         println!("List of Vulkan debugging layers available to use:");
         let mut layers = instance::layers_list().unwrap();
@@ -105,36 +119,36 @@ pub fn render_main() {
             println!("\t{}", l.name());
         }
         let layers = vec![
-            "VK_LAYER_LUNARG_standard_validation",
-            "VK_LAYER_LUNARG_parameter_validation",
+            // "VK_LAYER_LUNARG_standard_validation",
+            // "VK_LAYER_LUNARG_parameter_validation",
         ];
         Instance::new(None, &extensions, layers).expect("failed to create Vulkan instance")
     };
-    let all = MessageTypes {
-        error: true,
-        warning: true,
-        performance_warning: true,
-        information: true,
-        debug: true,
-    };
+    // let all = MessageTypes {
+    //     error: true,
+    //     warning: true,
+    //     performance_warning: true,
+    //     information: true,
+    //     debug: true,
+    // };
 
-    let _debug_callback = DebugCallback::new(&instance, all, |msg| {
-        let ty = if msg.ty.error {
-            "error"
-        } else if msg.ty.warning {
-            "warning"
-        } else if msg.ty.performance_warning {
-            "performance_warning"
-        } else if msg.ty.information {
-            "information"
-        } else if msg.ty.debug {
-            "debug"
-        } else {
-            panic!("no-impl");
-        };
-        println!("{} {}: {}", msg.layer_prefix, ty, msg.description);
-    })
-    .ok();
+    // let _debug_callback = DebugCallback::new(&instance, all, |msg| {
+    //     let ty = if msg.ty.error {
+    //         "error"
+    //     } else if msg.ty.warning {
+    //         "warning"
+    //     } else if msg.ty.performance_warning {
+    //         "performance_warning"
+    //     } else if msg.ty.information {
+    //         "information"
+    //     } else if msg.ty.debug {
+    //         "debug"
+    //     } else {
+    //         panic!("no-impl");
+    //     };
+    //     println!("{} {}: {}", msg.layer_prefix, ty, msg.description);
+    // })
+    // .ok();
 
     let physical = PhysicalDevice::enumerate(&instance).next().unwrap();
     println!(
@@ -206,9 +220,9 @@ pub fn render_main() {
     let vertex_buffer =
         CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::all(), vertices).unwrap();
 
-    let normals = NORMALS.iter().cloned();
-    let normals_buffer =
-        CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::all(), normals).unwrap();
+    // let normals = NORMALS.iter().cloned();
+    // let normals_buffer =
+    //     CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::all(), normals).unwrap();
 
     let indices = INDICES.iter().cloned();
     let index_buffer =
@@ -249,7 +263,9 @@ pub fn render_main() {
 
     let mut previous_frame = Box::new(sync::now(device.clone())) as Box<GpuFuture>;
     let rotation_start = Instant::now();
-
+    let mut phi = 0.0;
+    let mut theta = 0.0;
+    let (mut old_mx, mut old_my): (f64, f64) = (0.0, 0.0);
     loop {
         previous_frame.cleanup_finished();
 
@@ -286,7 +302,6 @@ pub fn render_main() {
             let elapsed = rotation_start.elapsed();
             let rotation =
                 elapsed.as_secs() as f64 + elapsed.subsec_nanos() as f64 / 1_000_000_000.0;
-            let rotation = Matrix3::from_angle_y(Rad(rotation as f32));
 
             // note: this teapot was meant for OpenGL where the origin is at the lower left
             //       instead the origin is at the upper left in Vulkan, so we reverse the Y axis
@@ -294,15 +309,22 @@ pub fn render_main() {
             let proj =
                 cgmath::perspective(Rad(std::f32::consts::FRAC_PI_2), aspect_ratio, 0.01, 100.0);
             let view = Matrix4::look_at(
-                Point3::new(0.3, 0.3, 1.0),
+                Point3::new(
+                    f32::sin(theta) * f32::cos(phi),
+                    f32::sin(theta) * f32::sin(phi),
+                    f32::cos(theta),
+                ),
                 Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, -1.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
             );
-            let scale = Matrix4::from_scale(0.01);
+            let scale: Matrix4<f32> = Matrix4::from_scale(0.01) *
+            Matrix4::from_angle_x(Rad(std::f64::consts::PI as f32 / 2.0)) *
+            Matrix4::from_angle_z(Rad(std::f64::consts::PI as f32))
+            ;
 
             let uniform_data = vs::ty::Data {
-                world: Matrix4::from(rotation).into(),
-                view: (view * scale).into(),
+                world: scale.into(),
+                view: view.into(),
                 proj: proj.into(),
             };
 
@@ -339,7 +361,7 @@ pub fn render_main() {
                 .draw_indexed(
                     pipeline.clone(),
                     &DynamicState::none(),
-                    vec![vertex_buffer.clone(), normals_buffer.clone()],
+                    vec![vertex_buffer.clone()],
                     index_buffer.clone(),
                     set.clone(),
                     (),
@@ -388,6 +410,25 @@ pub fn render_main() {
                 ..
             } => done = true,
             winit::Event::WindowEvent {
+                event:
+                    winit::WindowEvent::CursorMoved {
+                        device_id,
+                        position,
+                        modifiers,
+                    },
+                ..
+            } => {
+                if (old_mx, old_my) == (0.0, 0.0) {
+                } else {
+                    let dx = position.x - old_mx;
+                    let dy = position.y - old_my;
+                    phi += (dx as f32) * 0.01;
+                    theta += (dy as f32) * 0.01;
+                }
+                old_mx = position.x;
+                old_my = position.y;
+            }
+            winit::Event::WindowEvent {
                 event: winit::WindowEvent::Resized(_),
                 ..
             } => recreate_swapchain = true,
@@ -430,13 +471,9 @@ fn window_size_dependent_setup(
         })
         .collect::<Vec<_>>();
 
-    // In the triangle example we use a dynamic viewport, as its a simple example.
-    // However in the teapot example, we recreate the pipelines with a hardcoded viewport instead.
-    // This allows the driver to optimize things, at the cost of slower window resizes.
-    // https://computergraphics.stackexchange.com/questions/5742/vulkan-best-way-of-updating-pipeline-viewport
     let pipeline = Arc::new(
         GraphicsPipeline::start()
-            .vertex_input(TwoBuffersDefinition::<Vertex, Normal>::new())
+            .vertex_input(SingleBufferDefinition::<Vertex>::new())
             .vertex_shader(vs.main_entry_point(), ())
             .triangle_list()
             .viewports_dynamic_scissors_irrelevant(1)
@@ -454,13 +491,6 @@ fn window_size_dependent_setup(
 
     (pipeline, framebuffers)
 }
-
-#[derive(Copy, Clone)]
-pub struct Vertex {
-    position: (f32, f32, f32),
-}
-
-impl_vertex!(Vertex, position);
 
 pub const VERTICES: [Vertex; 531] = [
     Vertex {
@@ -2058,13 +2088,6 @@ pub const VERTICES: [Vertex; 531] = [
         position: (34.9202, 28.3457, -15.6121),
     },
 ];
-
-#[derive(Copy, Clone)]
-pub struct Normal {
-    normal: (f32, f32, f32),
-}
-
-impl_vertex!(Normal, normal);
 
 pub const NORMALS: [Normal; 531] = [
     Normal {
