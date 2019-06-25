@@ -45,8 +45,8 @@ use cgmath::{Matrix3, Matrix4, Point3, Rad, Vector3};
 use std::iter;
 use std::sync::Arc;
 use std::time::Instant;
-
-mod vs {
+use crate::state::*;
+mod point_vs {
     vulkano_shaders::shader! {
         ty: "vertex",
         src: "
@@ -67,29 +67,41 @@ mod vs {
             mat4 worldview = uniforms.view * uniforms.world;
             // v_normal = transpose(inverse(mat3(worldview))) * normal;
             gl_Position = uniforms.proj * worldview * vec4(position, 1.0);
-            gl_PointSize = abs(gl_Position.z) * 10.0;
+            gl_PointSize = 1.0/(1.0e-3 + abs(gl_Position.z)) * 100.0;
         }
         "
     }
 }
+mod edge_vs {
+    vulkano_shaders::shader! {
+        ty: "vertex",
+        src: "
+        #version 450
 
-mod fs {
+        layout(location = 0) in vec3 position;
+
+        layout(set = 0, binding = 0) uniform Data {
+            mat4 world;
+            mat4 view;
+            mat4 proj;
+        } uniforms;
+
+        void main() {
+            mat4 worldview = uniforms.view * uniforms.world;
+            gl_Position = uniforms.proj * worldview * vec4(position, 1.0);
+        }
+        "
+    }
+}
+mod white_fs {
     vulkano_shaders::shader! {
         ty: "fragment",
         src: "
         #version 450
-
-        // layout(location = 0) in vec3 v_normal;
         layout(location = 0) out vec4 f_color;
 
-        const vec3 LIGHT = vec3(0.0, 0.0, 1.0);
-
         void main() {
-            float brightness = 0.5f; // dot(normalize(v_normal), normalize(LIGHT));
-            vec3 dark_color = vec3(0.0, 0.0, 0.0);
-            vec3 regular_color = vec3(1.0, 1.0, 1.0);
-
-            f_color = vec4(mix(dark_color, regular_color, brightness), 1.0);
+            f_color = vec4(1.0, 1.0, 1.0, 1.0);
         }
         "
     }
@@ -109,7 +121,7 @@ pub struct Normal {
 
 impl_vertex!(Normal, normal);
 
-pub fn render_main() {
+pub fn render_main(tick: Box<Fn()->Sim_State>) {
     let instance = {
         let mut extensions = vulkano_win::required_extensions();
         // extensions.ext_debug_report = true;
@@ -216,31 +228,12 @@ pub fn render_main() {
         )
         .unwrap()
     };
-    let VERTICES = [
-        Point3 {
-            x: 0.0,
-            y: 0.0,
-            z: 0.0,
-        },
-        Point3 {
-            x: 0.0,
-            y: 0.0,
-            z: 10.0,
-        },
-        Point3 {
-            x: 10.0,
-            y: 0.0,
-            z: 0.0,
-        },
-    ];
-    let vertices = VERTICES.iter().cloned();
-    let vertex_buffer =
-        CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::all(), vertices).unwrap();
 
-    let uniform_buffer = CpuBufferPool::<vs::ty::Data>::new(device.clone(), BufferUsage::all());
+    let uniform_buffer =
+        CpuBufferPool::<point_vs::ty::Data>::new(device.clone(), BufferUsage::all());
 
-    let vs = vs::Shader::load(device.clone()).unwrap();
-    let fs = fs::Shader::load(device.clone()).unwrap();
+    let point_vs = point_vs::Shader::load(device.clone()).unwrap();
+    let white_fs = white_fs::Shader::load(device.clone()).unwrap();
 
     let render_pass = Arc::new(
         single_pass_renderpass!(device.clone(),
@@ -266,10 +259,9 @@ pub fn render_main() {
         .unwrap(),
     );
 
-    let (mut pipeline, mut framebuffers): (
-        Option<Arc<GraphicsPipelineAbstract + Send + Sync>>,
-        Vec<Arc<FramebufferAbstract + Send + Sync>>,
-    ) = (None, Vec::new());
+    let mut point_pipeline: Option<Arc<GraphicsPipelineAbstract + Send + Sync>> = None;
+    let mut line_pipeline: Option<Arc<GraphicsPipelineAbstract + Send + Sync>> = None;
+    let mut framebuffers: Vec<Arc<FramebufferAbstract + Send + Sync>> = Vec::new();
 
     let mut recreate_swapchain = false;
 
@@ -281,7 +273,7 @@ pub fn render_main() {
     loop {
         previous_frame.cleanup_finished();
 
-        if recreate_swapchain || pipeline.is_none() {
+        if recreate_swapchain || point_pipeline.is_none() || line_pipeline.is_none() {
             dimensions = if let Some(dimensions) = window.get_inner_size() {
                 let dimensions: (u32, u32) =
                     dimensions.to_physical(window.get_hidpi_factor()).into();
@@ -300,7 +292,7 @@ pub fn render_main() {
             let depth_buffer =
                 AttachmentImage::transient(device.clone(), dimensions, Format::D16Unorm).unwrap();
 
-            let new_framebuffers = new_images
+            framebuffers = new_images
                 .iter()
                 .map(|image| {
                     Arc::new(
@@ -315,10 +307,10 @@ pub fn render_main() {
                 })
                 .collect::<Vec<_>>();
 
-            let new_pipeline = Arc::new(
+            point_pipeline = Some(Arc::new(
                 GraphicsPipeline::start()
                     .vertex_input(SingleBufferDefinition::<Vertex>::new())
-                    .vertex_shader(vs.main_entry_point(), ())
+                    .vertex_shader(point_vs.main_entry_point(), ())
                     .point_list()
                     .viewports_dynamic_scissors_irrelevant(1)
                     .viewports(iter::once(Viewport {
@@ -326,14 +318,30 @@ pub fn render_main() {
                         dimensions: [dimensions[0] as f32, dimensions[1] as f32],
                         depth_range: 0.0..1.0,
                     }))
-                    .fragment_shader(fs.main_entry_point(), ())
+                    .fragment_shader(white_fs.main_entry_point(), ())
                     .depth_stencil_simple_depth()
                     .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
                     .build(device.clone())
                     .unwrap(),
-            );
-            pipeline = Some(new_pipeline);
-            framebuffers = new_framebuffers;
+            ));
+
+            line_pipeline = Some(Arc::new(
+                GraphicsPipeline::start()
+                    .vertex_input(SingleBufferDefinition::<Vertex>::new())
+                    .vertex_shader(point_vs.main_entry_point(), ())
+                    .line_list()
+                    .viewports_dynamic_scissors_irrelevant(1)
+                    .viewports(iter::once(Viewport {
+                        origin: [0.0, 0.0],
+                        dimensions: [dimensions[0] as f32, dimensions[1] as f32],
+                        depth_range: 0.0..1.0,
+                    }))
+                    .fragment_shader(white_fs.main_entry_point(), ())
+                    .depth_stencil_simple_depth()
+                    .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
+                    .build(device.clone())
+                    .unwrap(),
+            ));
 
             recreate_swapchain = false;
         }
@@ -342,9 +350,6 @@ pub fn render_main() {
             let elapsed = rotation_start.elapsed();
             // let rotation =
             //     elapsed.as_secs() as f64 + elapsed.subsec_nanos() as f64 / 1_000_000_000.0;
-
-            // note: this teapot was meant for OpenGL where the origin is at the lower left
-            //       instead the origin is at the upper left in Vulkan, so we reverse the Y axis
             let aspect_ratio = dimensions[0] as f32 / dimensions[1] as f32;
             let proj =
                 cgmath::perspective(Rad(std::f32::consts::FRAC_PI_2), aspect_ratio, 0.01, 100.0);
@@ -353,16 +358,16 @@ pub fn render_main() {
                     f32::sin(theta) * f32::cos(phi),
                     f32::sin(theta) * f32::sin(phi),
                     f32::cos(theta),
-                ),
+                ) * 20.0,
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, -1.0),
             );
-            let scale: Matrix4<f32> = Matrix4::from_scale(0.1)
+            let scale: Matrix4<f32> = Matrix4::from_scale(1.0)
             //* Matrix4::from_angle_x(Rad(std::f64::consts::PI as f32 / 2.0))
             //* Matrix4::from_angle_z(Rad(std::f64::consts::PI as f32))
             ;
 
-            let uniform_data = vs::ty::Data {
+            let uniform_data = point_vs::ty::Data {
                 world: scale.into(),
                 view: view.into(),
                 proj: proj.into(),
@@ -370,14 +375,6 @@ pub fn render_main() {
 
             uniform_buffer.next(uniform_data).unwrap()
         };
-        let pipeline = pipeline.clone().unwrap();
-        let set = Arc::new(
-            PersistentDescriptorSet::start(pipeline.clone(), 0)
-                .add_buffer(uniform_buffer_subbuffer)
-                .unwrap()
-                .build()
-                .unwrap(),
-        );
 
         let (image_num, acquire_future) =
             match swapchain::acquire_next_image(swapchain.clone(), None) {
@@ -389,6 +386,19 @@ pub fn render_main() {
                 Err(err) => panic!("{:?}", err),
             };
 
+        let sim_state = tick();
+        let vertices = sim_state.pos.iter().cloned();
+        let vertex_buffer =
+            CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::all(), vertices).unwrap();
+        let mut edges: Vec<vec3> = Vec::new();
+        for edge in sim_state.links {
+            edges.push(sim_state.pos[edge.0 as usize]);
+            edges.push(sim_state.pos[edge.1 as usize]);
+        }
+        let edges = edges.iter().cloned();
+        let edges_buffer =
+            CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::all(), edges).unwrap();
+
         let command_buffer =
             AutoCommandBufferBuilder::primary_one_time_submit(device.clone(), queue.family())
                 .unwrap()
@@ -399,10 +409,30 @@ pub fn render_main() {
                 )
                 .unwrap()
                 .draw(
-                    pipeline.clone(),
+                    point_pipeline.clone().unwrap(),
                     &DynamicState::none(),
                     vec![vertex_buffer.clone()],
-                    set.clone(),
+                    Arc::new(
+                        PersistentDescriptorSet::start(line_pipeline.clone().unwrap(), 0)
+                            .add_buffer(uniform_buffer_subbuffer.clone())
+                            .unwrap()
+                            .build()
+                            .unwrap(),
+                    ),
+                    (),
+                )
+                .unwrap()
+                .draw(
+                    line_pipeline.clone().unwrap(),
+                    &DynamicState::none(),
+                    vec![edges_buffer.clone()],
+                    Arc::new(
+                        PersistentDescriptorSet::start(line_pipeline.clone().unwrap(), 0)
+                            .add_buffer(uniform_buffer_subbuffer.clone())
+                            .unwrap()
+                            .build()
+                            .unwrap(),
+                    ),
                     (),
                 )
                 .unwrap()
@@ -461,8 +491,23 @@ pub fn render_main() {
                 } else {
                     let dx = position.x - old_mx;
                     let dy = position.y - old_my;
-                    phi += (dx as f32) * 0.01;
+                    phi -= (dx as f32) * 0.01;
                     theta += (dy as f32) * 0.01;
+                    let eps = 1.0e-4;
+                    phi = if phi > std::f32::consts::PI * 2.0 {
+                        phi - std::f32::consts::PI * 2.0
+                    } else if phi < 0.0 {
+                        phi + std::f32::consts::PI * 2.0
+                    } else {
+                        phi
+                    };
+                    theta = if theta > std::f32::consts::PI - eps {
+                        std::f32::consts::PI - eps
+                    } else if theta < eps {
+                        eps
+                    } else {
+                        theta
+                    };
                 }
                 old_mx = position.x;
                 old_my = position.y;

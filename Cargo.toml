@@ -14,7 +14,7 @@ rand = "0.6"
 vulkano = "0.11"
 vulkano-shaders = "0.11"
 vulkano-win = "0.11"
-cgmath = "0.16"
+cgmath = { version="0.16", features=["serde"]}
 image = "0.20"
 winit = "0.18"
 time = "0.1.37"

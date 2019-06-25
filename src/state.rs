@@ -15,7 +15,7 @@ use serde::ser::{SerializeSeq, Serializer};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::prelude::*;
-type vec3 = Vector3<f32>;
+pub type vec3 = Point3<f32>;
 pub struct Sim_Params {
     rest_length: f32,
     spring_factor: f32,
@@ -25,26 +25,26 @@ pub struct Sim_Params {
     cell_mass: f32,
     can_radius: f32,
 }
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct Sim_State {
-    pos: Vec<vec3>,
-    links: Vec<(u32, u32)>,
+    pub pos: Vec<vec3>,
+    pub links: Vec<(u32, u32)>,
 }
 impl Sim_State {
-    fn new() -> Sim_State {
+    pub fn new() -> Sim_State {
         Sim_State {
             pos: Vec::new(),
             links: Vec::new(),
         }
     }
-    fn open(filename: &str) -> Sim_State {
+    pub fn open(filename: &str) -> Sim_State {
         let mut file = File::open(filename).unwrap();
         let mut contents: Vec<u8> = Vec::new();
         file.read_to_end(&mut contents).unwrap();
         let contents = lzma::decompress(&mut contents).unwrap();
         deserialize(&contents).unwrap()
     }
-    fn dump(&self, filename: &str) {
+    pub fn dump(&self, filename: &str) {
         let ser = serialize(self).unwrap();
         let mut file = File::create(filename).unwrap();
         let ser = lzma::compress(&ser, 6).unwrap();
