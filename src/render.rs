@@ -67,7 +67,7 @@ mod vs {
             mat4 worldview = uniforms.view * uniforms.world;
             // v_normal = transpose(inverse(mat3(worldview))) * normal;
             gl_Position = uniforms.proj * worldview * vec4(position, 1.0);
-            gl_PointSize = 10.0;
+            gl_PointSize = abs(gl_Position.z) * 10.0;
         }
         "
     }
@@ -217,20 +217,20 @@ pub fn render_main() {
         .unwrap()
     };
     let VERTICES = [
-        Point3{
+        Point3 {
             x: 0.0,
             y: 0.0,
             z: 0.0,
         },
-        Point3{
+        Point3 {
             x: 0.0,
             y: 0.0,
             z: 10.0,
         },
-        Point3{
-            x: 0.0,
+        Point3 {
+            x: 10.0,
             y: 0.0,
-            z: 5.0,
+            z: 0.0,
         },
     ];
     let vertices = VERTICES.iter().cloned();
@@ -266,19 +266,22 @@ pub fn render_main() {
         .unwrap(),
     );
 
-    let (mut pipeline, mut framebuffers) =
-        window_size_dependent_setup(device.clone(), &vs, &fs, &images, render_pass.clone());
+    let (mut pipeline, mut framebuffers): (
+        Option<Arc<GraphicsPipelineAbstract + Send + Sync>>,
+        Vec<Arc<FramebufferAbstract + Send + Sync>>,
+    ) = (None, Vec::new());
+
     let mut recreate_swapchain = false;
 
     let mut previous_frame = Box::new(sync::now(device.clone())) as Box<GpuFuture>;
     let rotation_start = Instant::now();
     let mut phi = 0.0;
-    let mut theta = 0.0;
+    let mut theta = std::f32::consts::FRAC_PI_2;
     let (mut old_mx, mut old_my): (f64, f64) = (0.0, 0.0);
     loop {
         previous_frame.cleanup_finished();
 
-        if recreate_swapchain {
+        if recreate_swapchain || pipeline.is_none() {
             dimensions = if let Some(dimensions) = window.get_inner_size() {
                 let dimensions: (u32, u32) =
                     dimensions.to_physical(window.get_hidpi_factor()).into();
@@ -294,14 +297,42 @@ pub fn render_main() {
             };
             swapchain = new_swapchain;
 
-            let (new_pipeline, new_framebuffers) = window_size_dependent_setup(
-                device.clone(),
-                &vs,
-                &fs,
-                &new_images,
-                render_pass.clone(),
+            let depth_buffer =
+                AttachmentImage::transient(device.clone(), dimensions, Format::D16Unorm).unwrap();
+
+            let new_framebuffers = new_images
+                .iter()
+                .map(|image| {
+                    Arc::new(
+                        Framebuffer::start(render_pass.clone())
+                            .add(image.clone())
+                            .unwrap()
+                            .add(depth_buffer.clone())
+                            .unwrap()
+                            .build()
+                            .unwrap(),
+                    ) as Arc<FramebufferAbstract + Send + Sync>
+                })
+                .collect::<Vec<_>>();
+
+            let new_pipeline = Arc::new(
+                GraphicsPipeline::start()
+                    .vertex_input(SingleBufferDefinition::<Vertex>::new())
+                    .vertex_shader(vs.main_entry_point(), ())
+                    .point_list()
+                    .viewports_dynamic_scissors_irrelevant(1)
+                    .viewports(iter::once(Viewport {
+                        origin: [0.0, 0.0],
+                        dimensions: [dimensions[0] as f32, dimensions[1] as f32],
+                        depth_range: 0.0..1.0,
+                    }))
+                    .fragment_shader(fs.main_entry_point(), ())
+                    .depth_stencil_simple_depth()
+                    .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
+                    .build(device.clone())
+                    .unwrap(),
             );
-            pipeline = new_pipeline;
+            pipeline = Some(new_pipeline);
             framebuffers = new_framebuffers;
 
             recreate_swapchain = false;
@@ -309,8 +340,8 @@ pub fn render_main() {
 
         let uniform_buffer_subbuffer = {
             let elapsed = rotation_start.elapsed();
-            let rotation =
-                elapsed.as_secs() as f64 + elapsed.subsec_nanos() as f64 / 1_000_000_000.0;
+            // let rotation =
+            //     elapsed.as_secs() as f64 + elapsed.subsec_nanos() as f64 / 1_000_000_000.0;
 
             // note: this teapot was meant for OpenGL where the origin is at the lower left
             //       instead the origin is at the upper left in Vulkan, so we reverse the Y axis
@@ -324,11 +355,11 @@ pub fn render_main() {
                     f32::cos(theta),
                 ),
                 Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(0.0, 0.0, -1.0),
             );
-            let scale: Matrix4<f32> = Matrix4::from_scale(0.01) *
-            Matrix4::from_angle_x(Rad(std::f64::consts::PI as f32 / 2.0)) *
-            Matrix4::from_angle_z(Rad(std::f64::consts::PI as f32))
+            let scale: Matrix4<f32> = Matrix4::from_scale(0.1)
+            //* Matrix4::from_angle_x(Rad(std::f64::consts::PI as f32 / 2.0))
+            //* Matrix4::from_angle_z(Rad(std::f64::consts::PI as f32))
             ;
 
             let uniform_data = vs::ty::Data {
@@ -339,7 +370,7 @@ pub fn render_main() {
 
             uniform_buffer.next(uniform_data).unwrap()
         };
-
+        let pipeline = pipeline.clone().unwrap();
         let set = Arc::new(
             PersistentDescriptorSet::start(pipeline.clone(), 0)
                 .add_buffer(uniform_buffer_subbuffer)
@@ -446,56 +477,4 @@ pub fn render_main() {
             return;
         }
     }
-}
-
-/// This method is called once during initialization, then again whenever the window is resized
-fn window_size_dependent_setup(
-    device: Arc<Device>,
-    vs: &vs::Shader,
-    fs: &fs::Shader,
-    images: &[Arc<SwapchainImage<Window>>],
-    render_pass: Arc<RenderPassAbstract + Send + Sync>,
-) -> (
-    Arc<GraphicsPipelineAbstract + Send + Sync>,
-    Vec<Arc<FramebufferAbstract + Send + Sync>>,
-) {
-    let dimensions = images[0].dimensions();
-
-    let depth_buffer =
-        AttachmentImage::transient(device.clone(), dimensions, Format::D16Unorm).unwrap();
-
-    let framebuffers = images
-        .iter()
-        .map(|image| {
-            Arc::new(
-                Framebuffer::start(render_pass.clone())
-                    .add(image.clone())
-                    .unwrap()
-                    .add(depth_buffer.clone())
-                    .unwrap()
-                    .build()
-                    .unwrap(),
-            ) as Arc<FramebufferAbstract + Send + Sync>
-        })
-        .collect::<Vec<_>>();
-
-    let pipeline = Arc::new(
-        GraphicsPipeline::start()
-            .vertex_input(SingleBufferDefinition::<Vertex>::new())
-            .vertex_shader(vs.main_entry_point(), ())
-            .point_list()
-            .viewports_dynamic_scissors_irrelevant(1)
-            .viewports(iter::once(Viewport {
-                origin: [0.0, 0.0],
-                dimensions: [dimensions[0] as f32, dimensions[1] as f32],
-                depth_range: 0.0..1.0,
-            }))
-            .fragment_shader(fs.main_entry_point(), ())
-            .depth_stencil_simple_depth()
-            .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
-            .build(device.clone())
-            .unwrap(),
-    );
-
-    (pipeline, framebuffers)
 }
