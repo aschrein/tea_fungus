@@ -121,7 +121,7 @@ pub struct Normal {
 
 impl_vertex!(Normal, normal);
 
-pub fn render_main(tick: Box<Fn()->Sim_State>) {
+pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
     let instance = {
         let mut extensions = vulkano_win::required_extensions();
         // extensions.ext_debug_report = true;
@@ -386,14 +386,14 @@ pub fn render_main(tick: Box<Fn()->Sim_State>) {
                 Err(err) => panic!("{:?}", err),
             };
 
-        let sim_state = tick();
-        let vertices = sim_state.pos.iter().cloned();
+        tick(state);
+        let vertices = state.pos.iter().cloned();
         let vertex_buffer =
             CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::all(), vertices).unwrap();
         let mut edges: Vec<vec3> = Vec::new();
-        for edge in sim_state.links {
-            edges.push(sim_state.pos[edge.0 as usize]);
-            edges.push(sim_state.pos[edge.1 as usize]);
+        for edge in &state.links {
+            edges.push(state.pos[edge.0 as usize]);
+            edges.push(state.pos[edge.1 as usize]);
         }
         let edges = edges.iter().cloned();
         let edges_buffer =
