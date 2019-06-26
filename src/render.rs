@@ -42,10 +42,10 @@ use winit::Window;
 
 use cgmath::{Matrix3, Matrix4, Point3, Rad, Vector3};
 
+use crate::state::*;
 use std::iter;
 use std::sync::Arc;
 use std::time::Instant;
-use crate::state::*;
 mod point_vs {
     vulkano_shaders::shader! {
         ty: "vertex",
@@ -96,6 +96,32 @@ mod edge_vs {
             gl_Position = uniforms.proj * wpos;
             gl_PointSize = 1.0/(1.0e-3 + abs(gl_Position.z))
             * 60.0;
+        }
+        "
+    }
+}
+mod fs_vs {
+    vulkano_shaders::shader! {
+        ty: "vertex",
+        src: "
+        #version 450
+        layout(location = 0) in vec3 position;
+        void main() {
+            float x = -1.0 + float((gl_VertexIndex & 1) << 2);
+            float y = -1.0 + float((gl_VertexIndex & 2) << 1);
+            gl_Position = vec4(x, y, 0, 1);
+        }
+        "
+    }
+}
+mod fs_ps {
+    vulkano_shaders::shader! {
+        ty: "fragment",
+        src: "
+        #version 450
+        layout(location = 0) out vec4 f_color;
+        void main() {
+            f_color = vec4(0.0, 0.0, 0.0, 1.0);
         }
         "
     }
@@ -247,7 +273,26 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
 
     let point_vs = point_vs::Shader::load(device.clone()).unwrap();
     let white_fs = white_fs::Shader::load(device.clone()).unwrap();
-
+    let fs_vs = fs_vs::Shader::load(device.clone()).unwrap();
+    let fs_ps = fs_ps::Shader::load(device.clone()).unwrap();
+    let fs_vertex_buffer = CpuAccessibleBuffer::from_iter(
+        device.clone(),
+        BufferUsage::all(),
+        [
+            Vertex {
+                position: (-1.0, -1.0, 0.0),
+            },
+            Vertex {
+                position: (2.0, -1.0, 0.0),
+            },
+            Vertex {
+                position: (-1.0, -2.0, 0.0),
+            },
+        ]
+        .iter()
+        .cloned(),
+    )
+    .unwrap();
     let render_pass = Arc::new(
         single_pass_renderpass!(device.clone(),
             attachments: {
@@ -274,6 +319,7 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
 
     let mut point_pipeline: Option<Arc<GraphicsPipelineAbstract + Send + Sync>> = None;
     let mut line_pipeline: Option<Arc<GraphicsPipelineAbstract + Send + Sync>> = None;
+    let mut fs_pipeline: Option<Arc<GraphicsPipelineAbstract + Send + Sync>> = None;
     let mut framebuffers: Vec<Arc<FramebufferAbstract + Send + Sync>> = Vec::new();
 
     let mut recreate_swapchain = false;
@@ -283,11 +329,12 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
     let mut phi = 0.0;
     let mut theta = std::f32::consts::FRAC_PI_2;
     let mut camera_zoom = 10.0;
+    let mut camera_moved = false;
     let (mut old_mx, mut old_my): (f64, f64) = (0.0, 0.0);
     loop {
         previous_frame.cleanup_finished();
 
-        if recreate_swapchain || point_pipeline.is_none() || line_pipeline.is_none() {
+        if recreate_swapchain || point_pipeline.is_none() {
             dimensions = if let Some(dimensions) = window.get_inner_size() {
                 let dimensions: (u32, u32) =
                     dimensions.to_physical(window.get_hidpi_factor()).into();
@@ -357,6 +404,24 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
                     .unwrap(),
             ));
 
+            fs_pipeline = Some(Arc::new(
+                GraphicsPipeline::start()
+                    .vertex_input(SingleBufferDefinition::<Vertex>::new())
+                    .vertex_shader(fs_vs.main_entry_point(), ())
+                    .triangle_list()
+                    .viewports_dynamic_scissors_irrelevant(1)
+                    .viewports(iter::once(Viewport {
+                        origin: [0.0, 0.0],
+                        dimensions: [dimensions[0] as f32, dimensions[1] as f32],
+                        depth_range: 0.0..1.0,
+                    }))
+                    .fragment_shader(fs_ps.main_entry_point(), ())
+                    .depth_stencil_simple_depth()
+                    .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
+                    .build(device.clone())
+                    .unwrap(),
+            ));
+
             recreate_swapchain = false;
         }
 
@@ -413,7 +478,7 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
         let edges_buffer =
             CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::all(), edges).unwrap();
 
-        let command_buffer =
+        let command_buffer = if camera_moved {
             AutoCommandBufferBuilder::primary_one_time_submit(device.clone(), queue.family())
                 .unwrap()
                 .begin_render_pass(
@@ -453,7 +518,29 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
                 .end_render_pass()
                 .unwrap()
                 .build()
-                .unwrap();
+                .unwrap()
+        } else {
+            AutoCommandBufferBuilder::primary_one_time_submit(device.clone(), queue.family())
+                .unwrap()
+                .begin_render_pass(
+                    framebuffers[image_num].clone(),
+                    false,
+                    vec![[0.0, 0.0, 0.0, 1.0].into(), 1f32.into()],
+                )
+                .unwrap()
+                .draw(
+                    fs_pipeline.clone().unwrap(),
+                    &DynamicState::none(),
+                    vec![fs_vertex_buffer.clone()],
+                    (),
+                    (),
+                )
+                .unwrap()
+                .end_render_pass()
+                .unwrap()
+                .build()
+                .unwrap()
+        };
 
         let future = previous_frame
             .join(acquire_future)
@@ -475,7 +562,7 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
                 previous_frame = Box::new(sync::now(device.clone())) as Box<_>;
             }
         }
-
+        camera_moved = false;
         let mut done = false;
         events_loop.poll_events(|ev| match ev {
             winit::Event::WindowEvent {
@@ -496,20 +583,20 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
                 event:
                     winit::WindowEvent::MouseWheel {
                         device_id,
-                       delta, phase, modifiers
+                        delta,
+                        phase,
+                        modifiers,
                     },
                 ..
-            } => {
-                match &delta {
-                    winit::MouseScrollDelta::LineDelta(dx, dy) => {
-                        camera_zoom += dy;
-                    }
-                    winit::MouseScrollDelta::PixelDelta(pd) => {
-                        std::panic!();
-                    }
+            } => match &delta {
+                winit::MouseScrollDelta::LineDelta(dx, dy) => {
+                    camera_zoom += dy;
+                    camera_moved = true;
                 }
-                
-            }
+                winit::MouseScrollDelta::PixelDelta(pd) => {
+                    std::panic!();
+                }
+            },
             winit::Event::WindowEvent {
                 event:
                     winit::WindowEvent::CursorMoved {
@@ -540,6 +627,7 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
                     } else {
                         theta
                     };
+                    camera_moved = true;
                 }
                 old_mx = position.x;
                 old_my = position.y;
