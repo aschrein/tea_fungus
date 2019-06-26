@@ -5,6 +5,7 @@ extern crate cgmath;
 extern crate rand;
 extern crate serde;
 
+use std::collections::HashSet;
 use bincode::{
     config, deserialize, deserialize_from, deserialize_in_place, serialize, serialized_size,
     ErrorKind, Result,
@@ -15,11 +16,12 @@ use serde::ser::{SerializeSeq, Serializer};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::prelude::*;
-pub type vec3 = Point3<f32>;
+pub type vec3 = Vector3<f32>;
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct Sim_Params {
     pub rest_length: f32,
     pub spring_factor: f32,
+    pub repell_factor: f32,
     pub planar_factor: f32,
     pub bulge_factor: f32,
     pub cell_radius: f32,
@@ -30,14 +32,14 @@ pub struct Sim_Params {
 pub struct Sim_State {
     pub params: Sim_Params,
     pub pos: Vec<vec3>,
-    pub links: Vec<(u32, u32)>,
+    pub links: HashSet<(u32, u32)>,
 }
 impl Sim_State {
     pub fn new(params: Sim_Params) -> Sim_State {
         Sim_State {
             params: params,
             pos: Vec::new(),
-            links: Vec::new(),
+            links: HashSet::new(),
         }
     }
     pub fn open(filename: &str) -> Sim_State {
@@ -80,7 +82,7 @@ impl UG {
             bins_indices: bins_indices,
         }
     }
-    pub fn put(&mut self, pos: Point3<f32>, index: u32) {
+    pub fn put(&mut self, pos: vec3, index: u32) {
         if pos.x > self.size
             || pos.y > self.size
             || pos.z > self.size
@@ -105,7 +107,7 @@ impl UG {
         }
         self.bins[*bin_id as usize].push(index);
     }
-    pub fn traverse(&self, pos: Point3<f32>, radius: f32, hit_history: &mut Vec<u32>) {
+    pub fn traverse(&self, pos: vec3, radius: f32, hit_history: &mut Vec<u32>) {
         if pos.x > self.size
             || pos.y > self.size
             || pos.z > self.size
@@ -156,6 +158,7 @@ fn UG_test() {
     let mut state = Sim_State::new(Sim_Params {
         rest_length: 0.1,
         spring_factor: 0.1,
+        repell_factor: 0.1,
         planar_factor: 0.1,
         bulge_factor: 0.1,
         cell_radius: 0.1,
@@ -173,7 +176,7 @@ fn UG_test() {
             y: range.sample(&mut rng),
             z: range.sample(&mut rng),
         });
-        state.links.push((i, (i + 1) % N));
+        state.links.insert((i, (i + 1) % N));
     }
     let M = 100;
     let bin_size = size * 2.0 / M as f32;
@@ -223,6 +226,7 @@ fn serde_test() {
     let mut state = Sim_State::new(Sim_Params {
         rest_length: 0.1,
         spring_factor: 0.1,
+        repell_factor: 0.1,
         planar_factor: 0.1,
         bulge_factor: 0.1,
         cell_radius: 0.1,
@@ -243,7 +247,7 @@ fn serde_test() {
             y: range.sample(&mut rng),
             z: range.sample(&mut rng),
         });
-        state.links.push((i, i + 1));
+        state.links.insert((i, i + 1));
     }
     state.dump("foo");
     assert_eq!(Sim_State::open("foo"), state);

@@ -55,7 +55,7 @@ mod point_vs {
         layout(location = 0) in vec3 position;
         // layout(location = 1) in vec3 normal;
 
-        // layout(location = 0) out vec3 v_normal;
+        layout(location = 0) out float v_depth;
 
         layout(set = 0, binding = 0) uniform Data {
             mat4 world;
@@ -65,9 +65,12 @@ mod point_vs {
 
         void main() {
             mat4 worldview = uniforms.view * uniforms.world;
+            vec4 wpos = worldview * vec4(position, 1.0);
+            v_depth = wpos.z;
             // v_normal = transpose(inverse(mat3(worldview))) * normal;
-            gl_Position = uniforms.proj * worldview * vec4(position, 1.0);
-            gl_PointSize = 1.0/(1.0e-3 + abs(gl_Position.z)) * 100.0;
+            gl_Position = uniforms.proj * wpos;
+            gl_PointSize = 1.0/(1.0e-3 + abs(gl_Position.z))
+            * 40.0;
         }
         "
     }
@@ -79,7 +82,7 @@ mod edge_vs {
         #version 450
 
         layout(location = 0) in vec3 position;
-
+        layout(location = 0) out float v_depth;
         layout(set = 0, binding = 0) uniform Data {
             mat4 world;
             mat4 view;
@@ -87,8 +90,12 @@ mod edge_vs {
         } uniforms;
 
         void main() {
-            mat4 worldview = uniforms.view * uniforms.world;
-            gl_Position = uniforms.proj * worldview * vec4(position, 1.0);
+             mat4 worldview = uniforms.view * uniforms.world;
+            vec4 wpos = worldview * vec4(position, 1.0);
+            v_depth = wpos.z;
+            gl_Position = uniforms.proj * wpos;
+            gl_PointSize = 1.0/(1.0e-3 + abs(gl_Position.z))
+            * 60.0;
         }
         "
     }
@@ -99,9 +106,15 @@ mod white_fs {
         src: "
         #version 450
         layout(location = 0) out vec4 f_color;
-
+        layout(location = 0) in float v_depth;
         void main() {
-            f_color = vec4(1.0, 1.0, 1.0, 1.0);
+            float r = clamp(-v_depth/5.0, 0.0, 1.0);
+            float g = clamp(-v_depth/10.0, 0.0, 1.0);
+            float b = clamp(-v_depth/20.0, 0.0, 1.0);
+            r = 1.1 - pow(r, 2.0);
+            g = 1.1 - pow(g, 2.0);
+            b = 1.1 - pow(b, 2.0);
+            f_color = vec4(r, g, b, 1.0);
         }
         "
     }
@@ -269,6 +282,7 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
     let rotation_start = Instant::now();
     let mut phi = 0.0;
     let mut theta = std::f32::consts::FRAC_PI_2;
+    let mut camera_zoom = 10.0;
     let (mut old_mx, mut old_my): (f64, f64) = (0.0, 0.0);
     loop {
         previous_frame.cleanup_finished();
@@ -358,7 +372,7 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
                     f32::sin(theta) * f32::cos(phi),
                     f32::sin(theta) * f32::sin(phi),
                     f32::cos(theta),
-                ) * 20.0,
+                ) * camera_zoom,
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, -1.0),
             );
@@ -405,7 +419,7 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
                 .begin_render_pass(
                     framebuffers[image_num].clone(),
                     false,
-                    vec![[0.0, 0.0, 1.0, 1.0].into(), 1f32.into()],
+                    vec![[0.0, 0.0, 0.0, 1.0].into(), 1f32.into()],
                 )
                 .unwrap()
                 .draw(
@@ -480,6 +494,24 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
             } => done = true,
             winit::Event::WindowEvent {
                 event:
+                    winit::WindowEvent::MouseWheel {
+                        device_id,
+                       delta, phase, modifiers
+                    },
+                ..
+            } => {
+                match &delta {
+                    winit::MouseScrollDelta::LineDelta(dx, dy) => {
+                        camera_zoom += dy;
+                    }
+                    winit::MouseScrollDelta::PixelDelta(pd) => {
+                        std::panic!();
+                    }
+                }
+                
+            }
+            winit::Event::WindowEvent {
+                event:
                     winit::WindowEvent::CursorMoved {
                         device_id,
                         position,
@@ -491,8 +523,8 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
                 } else {
                     let dx = position.x - old_mx;
                     let dy = position.y - old_my;
-                    phi -= (dx as f32) * 0.01;
-                    theta += (dy as f32) * 0.01;
+                    phi += (dx as f32) * 0.01;
+                    theta -= (dy as f32) * 0.01;
                     let eps = 1.0e-4;
                     phi = if phi > std::f32::consts::PI * 2.0 {
                         phi - std::f32::consts::PI * 2.0
