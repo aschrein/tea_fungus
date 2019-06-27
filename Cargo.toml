@@ -18,3 +18,4 @@ cgmath = { version="0.16", features=["serde"]}
 image = "0.20"
 winit = "0.18"
 time = "0.1.37"
+shaderc = "0.3"

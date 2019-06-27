@@ -37,14 +37,18 @@ fn main() {
             let birth_range = Uniform::new(0, 100);
             let range = Uniform::new(-0.01, 0.01);
             let mut rng = rand::thread_rng();
-            let M = 40;
+            
+
+            let M = 256;
             let size = state.params.can_radius;
-            let bin_size = size * 2.0 / M as f32;
-            let dt = 1.0e-3;
+           
             let mut ug = state::UG::new(size, M);
             for (i, &pnt) in state.pos.iter().enumerate() {
                 ug.put(pnt, i as u32);
             }
+            
+            let bin_size = size * 2.0 / M as f32;
+             let dt = 1.0e-3;
             let mut hit_history: Vec<u32> = Vec::new();
             let mut force_history: Vec<f32> = Vec::new();
             let mut new_pos = state.pos.clone();

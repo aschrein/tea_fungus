@@ -5,7 +5,6 @@ extern crate cgmath;
 extern crate rand;
 extern crate serde;
 
-use std::collections::HashSet;
 use bincode::{
     config, deserialize, deserialize_from, deserialize_in_place, serialize, serialized_size,
     ErrorKind, Result,
@@ -14,6 +13,7 @@ use cgmath::{Matrix3, Matrix4, MetricSpace, Point3, Rad, Vector3};
 use serde::de::Deserializer;
 use serde::ser::{SerializeSeq, Serializer};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::prelude::*;
 pub type vec3 = Vector3<f32>;
@@ -82,6 +82,24 @@ impl UG {
             bins_indices: bins_indices,
         }
     }
+    pub fn pack(&self) -> (Vec<u32>, Vec<u32>) {
+        let mut bins: Vec<u32> = Vec::new();
+        let mut points: Vec<u32> = Vec::new();
+        points.push(0);
+        for &bin_index in &self.bins_indices {
+            if bin_index > 0 {
+                let bin = &self.bins[bin_index as usize];
+                bins.push(points.len() as u32);
+                bins.push(bin.len() as u32);
+                for &id in bin {
+                    points.push(id);
+                }
+            } else {
+                bins.push(0);
+            }
+        }
+        (bins, points)
+    }
     pub fn put(&mut self, pos: vec3, index: u32) {
         if pos.x > self.size
             || pos.y > self.size
@@ -95,9 +113,21 @@ impl UG {
         let mut bin_idx = (self.bin_count as f32 * (pos.x + self.size) / (2.0 * self.size)) as u32;
         let mut bin_idy = (self.bin_count as f32 * (pos.y + self.size) / (2.0 * self.size)) as u32;
         let mut bin_idz = (self.bin_count as f32 * (pos.z + self.size) / (2.0 * self.size)) as u32;
-        bin_idx = if bin_idx == self.bin_count {self.bin_count - 1} else {bin_idx};
-        bin_idy = if bin_idy == self.bin_count {self.bin_count - 1} else {bin_idy};
-        bin_idz = if bin_idz == self.bin_count {self.bin_count - 1} else {bin_idz};
+        bin_idx = if bin_idx == self.bin_count {
+            self.bin_count - 1
+        } else {
+            bin_idx
+        };
+        bin_idy = if bin_idy == self.bin_count {
+            self.bin_count - 1
+        } else {
+            bin_idy
+        };
+        bin_idz = if bin_idz == self.bin_count {
+            self.bin_count - 1
+        } else {
+            bin_idz
+        };
         let flat_id =
             bin_idx + bin_idy * self.bin_count + bin_idz * self.bin_count * self.bin_count;
         let bin_id = &mut self.bins_indices[flat_id as usize];
@@ -203,14 +233,14 @@ fn UG_test() {
         let mut hit_history: Vec<u32> = Vec::new();
         let range = Uniform::new(0.5, size);
         let dist = range.sample(&mut rng);
-        let portion = (dist )*(dist) / (size * size);
+        let portion = (dist) * (dist) / (size * size);
         ug.traverse(rand_point, dist, &mut hit_history);
         let theoretical_num = (N as f32 * portion) as usize;
         let true_num = hit_history.len();
         println!("{} {}", theoretical_num, true_num);
         for j in &hit_history {
             let point = state.pos[*j as usize];
-            assert!(point.distance(rand_point.clone()) < (dist + bin_size*2.0) * 2.5);
+            assert!(point.distance(rand_point.clone()) < (dist + bin_size * 2.0) * 2.5);
         }
         assert!(
             hit_history.len() > 0
