@@ -19,8 +19,12 @@ use vulkano::descriptor::descriptor_set::PersistentDescriptorSet;
 use vulkano::device::{Device, DeviceExtensions};
 use vulkano::format::Format;
 use vulkano::framebuffer::{Framebuffer, FramebufferAbstract, RenderPassAbstract, Subpass};
+use vulkano::sampler::{Filter, MipmapMode, Sampler, SamplerAddressMode};
+
 use vulkano::image::attachment::AttachmentImage;
-use vulkano::image::SwapchainImage;
+use vulkano::image::*;
+use vulkano::image::{Dimensions, StorageImage, SwapchainImage};
+
 use vulkano::instance;
 use vulkano::instance::debug::{DebugCallback, MessageTypes};
 use vulkano::instance::Instance;
@@ -28,7 +32,8 @@ use vulkano::instance::InstanceExtensions;
 use vulkano::instance::PhysicalDevice;
 use vulkano::pipeline::vertex::{SingleBufferDefinition, TwoBuffersDefinition};
 use vulkano::pipeline::viewport::Viewport;
-use vulkano::pipeline::{GraphicsPipeline, GraphicsPipelineAbstract};
+use vulkano::pipeline::{ComputePipeline, GraphicsPipeline, GraphicsPipelineAbstract};
+
 use vulkano::swapchain;
 use vulkano::swapchain::{
     AcquireError, PresentMode, SurfaceTransform, Swapchain, SwapchainCreationError,
@@ -106,9 +111,11 @@ mod fs_vs {
         src: "
         #version 450
         layout(location = 0) in vec3 position;
+        layout(location = 0) out vec2 tex_coords;
         void main() {
             float x = -1.0 + float((gl_VertexIndex & 1) << 2);
             float y = -1.0 + float((gl_VertexIndex & 2) << 1);
+            tex_coords = vec2(x * 0.5 + 0.5, y * 0.5 + 0.5);
             gl_Position = vec4(x, y, 0, 1);
         }
         "
@@ -119,9 +126,26 @@ mod fs_ps {
         ty: "fragment",
         src: "
         #version 450
+        layout(set = 0, binding = 0) uniform sampler2D tex;
+        layout(location = 0) in vec2 tex_coords;
         layout(location = 0) out vec4 f_color;
         void main() {
-            f_color = vec4(0.0, 0.0, 0.0, 1.0);
+            f_color = texture(tex, tex_coords);
+        }
+        "
+    }
+}
+mod fs_cs {
+    vulkano_shaders::shader! {
+        ty: "compute",
+        src: "
+        #version 450
+        layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+        layout (set = 0, binding = 0, rgba8) uniform writeonly image2D resultImage;
+
+        void main() {
+            uint idx = gl_GlobalInvocationID.x;
+            imageStore(resultImage, ivec2(gl_GlobalInvocationID.xy), vec4(1.0, 0.5, 0.0, 1.0));
         }
         "
     }
@@ -271,10 +295,26 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
     let uniform_buffer =
         CpuBufferPool::<point_vs::ty::Data>::new(device.clone(), BufferUsage::all());
 
+    let sampler = Sampler::new(
+        device.clone(),
+        Filter::Linear,
+        Filter::Linear,
+        MipmapMode::Nearest,
+        SamplerAddressMode::Repeat,
+        SamplerAddressMode::Repeat,
+        SamplerAddressMode::Repeat,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+    )
+    .unwrap();
+
     let point_vs = point_vs::Shader::load(device.clone()).unwrap();
     let white_fs = white_fs::Shader::load(device.clone()).unwrap();
     let fs_vs = fs_vs::Shader::load(device.clone()).unwrap();
     let fs_ps = fs_ps::Shader::load(device.clone()).unwrap();
+    let fs_cs = fs_cs::Shader::load(device.clone()).unwrap();
     let fs_vertex_buffer = CpuAccessibleBuffer::from_iter(
         device.clone(),
         BufferUsage::all(),
@@ -320,8 +360,24 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
     let mut point_pipeline: Option<Arc<GraphicsPipelineAbstract + Send + Sync>> = None;
     let mut line_pipeline: Option<Arc<GraphicsPipelineAbstract + Send + Sync>> = None;
     let mut fs_pipeline: Option<Arc<GraphicsPipelineAbstract + Send + Sync>> = None;
+    let mut cs_pipeline =
+        Arc::new(ComputePipeline::new(device.clone(), &fs_cs.main_entry_point(), &()).unwrap());
     let mut framebuffers: Vec<Arc<FramebufferAbstract + Send + Sync>> = Vec::new();
-
+    let mut diffuse_buffer = StorageImage::with_usage(
+        device.clone(),
+        Dimensions::Dim2d {
+            width: dimensions[0],
+            height: dimensions[1],
+        },
+        Format::A2B10G10R10UnormPack32,
+        ImageUsage {
+            storage: true,
+            sampled: true,
+            ..ImageUsage::none()
+        },
+        Some(queue.family()),
+    )
+    .unwrap();
     let mut recreate_swapchain = false;
 
     let mut previous_frame = Box::new(sync::now(device.clone())) as Box<GpuFuture>;
@@ -331,6 +387,7 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
     let mut camera_zoom = 10.0;
     let mut camera_moved = false;
     let (mut old_mx, mut old_my): (f64, f64) = (0.0, 0.0);
+
     loop {
         previous_frame.cleanup_finished();
 
@@ -421,7 +478,21 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
                     .build(device.clone())
                     .unwrap(),
             ));
-
+            diffuse_buffer = StorageImage::with_usage(
+                device.clone(),
+                Dimensions::Dim2d {
+                    width: dimensions[0],
+                    height: dimensions[1],
+                },
+                Format::R32G32B32A32Sfloat,
+                ImageUsage {
+                    storage: true,
+                    sampled: true,
+                    ..ImageUsage::none()
+                },
+                Some(queue.family()),
+            )
+            .unwrap();
             recreate_swapchain = false;
         }
 
@@ -532,7 +603,13 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
                     fs_pipeline.clone().unwrap(),
                     &DynamicState::none(),
                     vec![fs_vertex_buffer.clone()],
-                    (),
+                    Arc::new(
+                        PersistentDescriptorSet::start(fs_pipeline.clone().unwrap(), 0)
+                            .add_sampled_image(diffuse_buffer.clone(), sampler.clone())
+                            .unwrap()
+                            .build()
+                            .unwrap(),
+                    ),
                     (),
                 )
                 .unwrap()
@@ -542,8 +619,29 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
                 .unwrap()
         };
 
+        let cs_command_buffer =
+            AutoCommandBufferBuilder::primary_one_time_submit(device.clone(), queue.family())
+                .unwrap()
+                .dispatch(
+                    [1, 4, 1],
+                    cs_pipeline.clone(),
+                    Arc::new(
+                        PersistentDescriptorSet::start(cs_pipeline.clone(), 0)
+                            .add_image(diffuse_buffer.clone())
+                            .unwrap()
+                            .build()
+                            .unwrap(),
+                    ),
+                    (),
+                )
+                .unwrap()
+                .build()
+                .unwrap();
+
         let future = previous_frame
             .join(acquire_future)
+            .then_execute(queue.clone(), cs_command_buffer)
+            .unwrap()
             .then_execute(queue.clone(), command_buffer)
             .unwrap()
             .then_swapchain_present(queue.clone(), swapchain.clone(), image_num)
