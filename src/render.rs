@@ -141,6 +141,7 @@ mod fs_cs {
         #extension GL_KHR_shader_subgroup_vote: enable
         #extension GL_KHR_shader_subgroup_shuffle: enable
 
+
         layout (set = 0, binding = 1, std140) uniform UBO 
         {
             vec3 camera_pos;
@@ -151,10 +152,10 @@ mod fs_cs {
             float ug_size;
             uint ug_bins_count;
         } g_ubo;
-        layout(set = 0, binding = 0) buffer Bins {
+        layout(set = 0, binding = 2) buffer Bins {
             uint data[];
         } g_bins;
-        layout(set = 0, binding = 0) buffer Particles {
+        layout(set = 0, binding = 3) buffer Particles {
             vec3 data[];
         } g_particles;
 
@@ -530,9 +531,21 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
             .unwrap();
             recreate_swapchain = false;
         }
-        let ug_bins_count = 128;
-        let ug_size = state.params.can_radius;
 
+        tick(state);
+        let ug_bins_count = 128;
+        let mut ug_size = 0.0;
+        for (i, &pnt) in state.pos.iter().enumerate() {
+            ug_size = std::cmp::max(
+                ug_size as u32,
+                std::cmp::max(
+                    f32::abs(pnt.x) as u32,
+                    std::cmp::max(f32::abs(pnt.y) as u32, f32::abs(pnt.z) as u32),
+                ),
+            ) as f32;
+                ;
+        }
+        ug_size += 1.0;
         let (uniform_buffer_subbuffer, cs_uniform_buffer_subbuffer) = {
             let elapsed = rotation_start.elapsed();
             // let rotation =
@@ -561,7 +574,6 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
                 proj: proj.into(),
             };
             (
-                
                 uniform_buffer.next(uniform_data).unwrap(),
                 cs_uniform_buffer
                     .next(fs_cs::ty::UBO {
@@ -589,8 +601,6 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
                 }
                 Err(err) => panic!("{:?}", err),
             };
-
-        tick(state);
 
         let command_buffer = if camera_moved {
             let vertices = state.pos.iter().cloned();
@@ -647,21 +657,21 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
                 .build()
                 .unwrap()
         } else {
-            // let mut ug = UG::new(ug_size, ug_bins_count);
-            // for (i, &pnt) in state.pos.iter().enumerate() {
-            //     ug.put(pnt, i as u32);
-            // }
-            // let (bins, point_ids) = ug.pack();
-            // let mut points: Vec<vec3> = Vec::new();
-            // for &id in &point_ids {
-            //     points.push(state.pos[id as usize]);
-            // }
-            // let points = points.iter().cloned();
-            // let points_buffer =
-            //     CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::all(), points).unwrap();
-            // let bins = bins.iter().cloned();
-            // let bins_buffer =
-            //     CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::all(), bins).unwrap();
+            let mut ug = UG::new(ug_size, ug_bins_count);
+            for (i, &pnt) in state.pos.iter().enumerate() {
+                ug.put(pnt, i as u32);
+            }
+            let (bins, point_ids) = ug.pack();
+            let mut points: Vec<vec3> = Vec::new();
+            for &id in &point_ids {
+                points.push(state.pos[id as usize]);
+            }
+            let points = points.iter().cloned();
+            let points_buffer =
+                CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::all(), points).unwrap();
+            let bins = bins.iter().cloned();
+            let bins_buffer =
+                CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::all(), bins).unwrap();
 
             AutoCommandBufferBuilder::primary_one_time_submit(device.clone(), queue.family())
                 .unwrap()
@@ -673,6 +683,10 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
                             .add_image(diffuse_buffer.clone())
                             .unwrap()
                             .add_buffer(cs_uniform_buffer_subbuffer.clone())
+                            .unwrap()
+                            .add_buffer(bins_buffer.clone())
+                            .unwrap()
+                            .add_buffer(points_buffer.clone())
                             .unwrap()
                             .build()
                             .unwrap(),

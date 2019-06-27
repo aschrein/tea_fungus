@@ -14,10 +14,10 @@ layout (set = 0, binding = 1, std140) uniform UBO
     float ug_size;
     uint ug_bins_count;
 } g_ubo;
-layout(set = 0, binding = 0) buffer Bins {
+layout(set = 0, binding = 2) buffer Bins {
     uint data[];
 } g_bins;
-layout(set = 0, binding = 0) buffer Particles {
+layout(set = 0, binding = 3) buffer Particles {
     vec3 data[];
 } g_particles;
 
@@ -33,6 +33,27 @@ bool intersect_plane(vec3 p, vec3 n, vec3 ray, vec3 ray_origin, out vec3 hit) {
     return true;
 }
 
+bool intersect_box(
+        vec3 box_min,
+        vec3 box_max,
+        vec3 ray_invdir,
+        vec3 ray_origin,
+        out float hit_min,
+        out float hit_max
+    ) {
+    vec3 tbot = ray_invdir * (box_min - ray_origin);
+    vec3 ttop = ray_invdir * (box_max - ray_origin);
+    vec3 tmin = min(ttop, tbot);
+    vec3 tmax = max(ttop, tbot);
+    vec2 t = max(tmin.xx, tmin.yz);
+    float t0 = max(t.x, t.y);
+    t = min(tmax.xx, tmax.yz);
+    float t1 = min(t.x, t.y);
+    hit_min = t0;
+    hit_max = t1;
+    return t1 > max(t0, 0.0);
+}
+
 void main() {
     ivec2 dim = imageSize(resultImage);
     vec2 uv = vec2(gl_GlobalInvocationID.xy) / dim;
@@ -46,10 +67,14 @@ void main() {
         + g_ubo.camera_right * xy.x
     );
     //float val = subgroupShuffle(ray_dir.x, 0);
-    float val = 0.0;
-    vec3 hit = vec3(0.0, 0.0, 0.0);
-    if (intersect_plane(vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 1.0), ray_dir, ray_origin, hit)) {
-        val = 1.0;
+    float hit_min;
+    float hit_max;
+    vec3 color = vec3(0.0, 0.0, 0.0);
+    if (intersect_box(
+        vec3(-g_ubo.ug_size),
+        vec3(g_ubo.ug_size),
+        1.0/ray_dir, ray_origin, hit_min, hit_max)) {
+        color = ray_origin + ray_dir * hit_min;
     }
-    imageStore(resultImage, ivec2(gl_GlobalInvocationID.xy), vec4(hit.xyz, 1.0));
+    imageStore(resultImage, ivec2(gl_GlobalInvocationID.xy), vec4(color.xyz, 1.0));
 }
