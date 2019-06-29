@@ -534,7 +534,7 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
         }
 
         tick(state);
-        let ug_bins_count = 64;
+        let ug_bins_count = 32;
         let mut ug_size = 0.0;
         for (i, &pnt) in state.pos.iter().enumerate() {
             ug_size = std::cmp::max(
