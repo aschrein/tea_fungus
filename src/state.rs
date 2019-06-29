@@ -96,6 +96,7 @@ impl UG {
                 }
             } else {
                 bins.push(0);
+                bins.push(0);
             }
         }
         (bins, points)
@@ -136,6 +137,52 @@ impl UG {
             *bin_id = self.bins.len() as u32 - 1;
         }
         self.bins[*bin_id as usize].push(index);
+    }
+    pub fn fill_lines_render(&self, lines: &mut Vec<vec3>) {
+        let bin_size = self.size * 2.0 / self.bin_count as f32;
+        for dz in 0..self.bin_count {
+            for dy in 0..self.bin_count {
+                for dx in 0..self.bin_count {
+                    let flat_id = dx + dy * self.bin_count + dz * self.bin_count * self.bin_count;
+                    let bin_id = &self.bins_indices[flat_id as usize];
+                    if *bin_id != 0 {
+                        let bin_idx = bin_size * dx as f32 - self.size;
+                        let bin_idy = bin_size * dy as f32 - self.size;
+                        let bin_idz = bin_size * dz as f32 - self.size;
+                        let iter_x = [0, 0, 1, 1, 0, 0, 1, 1, 0, 0];
+                        let iter_y = [0, 1, 1, 0, 0, 0, 0, 1, 1, 0];
+                        let iter_z = [0, 0, 0, 0, 0, 1, 1, 1, 1, 1];
+                        for i in 0..9 {
+                            lines.push(vec3 {
+                                x: bin_idx + bin_size * iter_x[i] as f32,
+                                y: bin_idy + bin_size * iter_y[i] as f32,
+                                z: bin_idz + bin_size * iter_z[i] as f32,
+                            });
+                            lines.push(vec3 {
+                                x: bin_idx + bin_size * iter_x[i + 1] as f32,
+                                y: bin_idy + bin_size * iter_y[i + 1] as f32,
+                                z: bin_idz + bin_size * iter_z[i + 1] as f32,
+                            });
+                        }
+                        let iter_x = [0, 0, 1, 1, 1, 1,];
+                        let iter_y = [1, 1, 1, 1, 0, 0,];
+                        let iter_z = [0, 1, 0, 1, 0, 1,];
+                        for i in 0..3 {
+                            lines.push(vec3 {
+                                x: bin_idx + bin_size * iter_x[i * 2] as f32,
+                                y: bin_idy + bin_size * iter_y[i * 2] as f32,
+                                z: bin_idz + bin_size * iter_z[i * 2] as f32,
+                            });
+                            lines.push(vec3 {
+                                x: bin_idx + bin_size * iter_x[i * 2 + 1] as f32,
+                                y: bin_idy + bin_size * iter_y[i * 2 + 1] as f32,
+                                z: bin_idz + bin_size * iter_z[i * 2 + 1] as f32,
+                            });
+                        }
+                    }
+                }
+            }
+        }
     }
     pub fn traverse(&self, pos: vec3, radius: f32, hit_history: &mut Vec<u32>) {
         if pos.x > self.size

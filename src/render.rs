@@ -151,6 +151,7 @@ mod fs_cs {
             float camera_fov;
             float ug_size;
             uint ug_bins_count;
+            float ug_bin_size;
         } g_ubo;
         layout(set = 0, binding = 2) buffer Bins {
             uint data[];
@@ -533,7 +534,7 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
         }
 
         tick(state);
-        let ug_bins_count = 128;
+        let ug_bins_count = 64;
         let mut ug_size = 0.0;
         for (i, &pnt) in state.pos.iter().enumerate() {
             ug_size = std::cmp::max(
@@ -584,6 +585,7 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
                         camera_fov: aspect_ratio,
                         ug_size: ug_size,
                         ug_bins_count: ug_bins_count,
+                        ug_bin_size: (ug_size * 2.0) / ug_bins_count as f32,
                         _dummy0: [0, 0, 0, 0],
                         _dummy1: [0, 0, 0, 0],
                         _dummy2: [0, 0, 0, 0],
@@ -612,6 +614,11 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
                 edges.push(state.pos[edge.0 as usize]);
                 edges.push(state.pos[edge.1 as usize]);
             }
+            let mut ug = UG::new(ug_size, ug_bins_count);
+            for (i, &pnt) in state.pos.iter().enumerate() {
+                ug.put(pnt, i as u32);
+            }
+            ug.fill_lines_render(&mut edges);
             let edges = edges.iter().cloned();
             let edges_buffer =
                 CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::all(), edges).unwrap();

@@ -29,7 +29,16 @@ fn main() {
     //     //state.links.insert((i, (i + 1) % N));
     // }
     let mut state = state::Sim_State::open("blob");
-    
+    // state.pos.push(state::vec3 {
+    //         x: 4.0,
+    //         y: 4.0,
+    //         z: 4.0,
+    //     });
+    //     state.pos.push(state::vec3 {
+    //         x: -4.0,
+    //         y: -4.0,
+    //         z: -4.0,
+    //     });
     render::render_main(
         &mut state,
         Box::new(|state: &mut state::Sim_State| {
@@ -46,7 +55,7 @@ fn main() {
             for (i, &pnt) in state.pos.iter().enumerate() {
                 ug.put(pnt, i as u32);
             }
-            
+
             let bin_size = size * 2.0 / M as f32;
              let dt = 1.0e-3;
             let mut hit_history: Vec<u32> = Vec::new();
