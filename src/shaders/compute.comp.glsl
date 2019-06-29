@@ -62,93 +62,80 @@ void iterate(
     float hit_max,
     out uint iter,
     out vec3 out_val) {
-    // vec3 dt = ray_invdir * g_ubo.ug_bin_size;
-    // vec3 box_min = floor((ray_origin - vec3(-g_ubo.ug_size)) / g_ubo.ug_bin_size);
-    // vec3 ray_offset = ray_origin - vec3(-g_ubo.ug_size);
-    // ivec3 orig_cell = ivec3(
-    //                     clamp(
-    //                         ray_offset / g_ubo.ug_bin_size,
-    //                         0.0,
-    //                         float(g_ubo.ug_bins_count) - 1.0
-    //                         )
-    //                     );
-    // vec3 init_dt = ray_invdir * (ray_origin - init_dt * g_ubo.ug_bin_size)
-    // vec3 drt = ray_invdir * g_ubo.ug_bin_size;
-    ivec3 exit, step, cell;
-    vec3 deltaT, nextCrossingT; 
+    ivec3 exit, step, cell_id;
+    vec3 axis_delta, cross_history;
     for (uint i = 0; i < 3; ++i) {
-        // convert ray starting point to cell coordinates                                                                                                                                                 
-        float rayOrigCell = ray_origin[i] + g_ubo.ug_size;
-        
-        cell[i] = int(clamp(floor(rayOrigCell / g_ubo.ug_bin_size), 0, float(g_ubo.ug_bins_count) - 1.0)); 
-        // out_val[i] = cell[i];
-        if (ray_dir[i] < 0) { 
-            deltaT[i] = -g_ubo.ug_bin_size * ray_invdir[i]; 
-            nextCrossingT[i] = (cell[i] * g_ubo.ug_bin_size - rayOrigCell) * ray_invdir[i]; 
-            exit[i] = -1; 
-            step[i] = -1; 
-        } 
-        else { 
-            deltaT[i] = g_ubo.ug_bin_size * ray_invdir[i]; 
-            nextCrossingT[i] = ((cell[i] + 1)  * g_ubo.ug_bin_size - rayOrigCell) * ray_invdir[i]; 
-            exit[i] = int(g_ubo.ug_bins_count); 
-            step[i] = 1; 
-        } 
+        // convert ray starting point to cell_id coordinates                                                                                                                                                 
+        float ray_offset = ray_origin[i] + g_ubo.ug_size;
+        cell_id[i] = int(clamp(floor(ray_offset / g_ubo.ug_bin_size), 0, float(g_ubo.ug_bins_count) - 1.0));
+        // out_val[i] = cell_id[i];
+        if (ray_dir[i] < 0) {
+            axis_delta[i] = -g_ubo.ug_bin_size * ray_invdir[i];
+            cross_history[i] = (cell_id[i] * g_ubo.ug_bin_size - ray_offset) * ray_invdir[i];
+            // exit[i] = -1;
+            step[i] = -1;
+        }
+        else {
+            axis_delta[i] = g_ubo.ug_bin_size * ray_invdir[i];
+            cross_history[i] = ((cell_id[i] + 1)  * g_ubo.ug_bin_size - ray_offset) * ray_invdir[i];
+            // exit[i] = int();
+            step[i] = 1;
+        }
     }
     iter = 0;
+    uint cell_id_offset = cell_id[2] * g_ubo.ug_bins_count * g_ubo.ug_bins_count
+        + cell_id[1] * g_ubo.ug_bins_count + cell_id[0];
+    int cell_id_cur = int(cell_id_offset);
+    ivec3 cell_delta = step * ivec3(1, g_ubo.ug_bins_count, g_ubo.ug_bins_count * g_ubo.ug_bins_count);
     while (true) {
-        uint o = cell[2] * g_ubo.ug_bins_count * g_ubo.ug_bins_count
-        + cell[1] * g_ubo.ug_bins_count + cell[0];
+        uint o = cell_id_cur;
         uint cnt = g_bins.data[2 * o];
         if (cnt > 0) {
             iter++;
         }
+        
+        
+
         uint k =
-            (uint(nextCrossingT[0] < nextCrossingT[1]) << 2) +
-            (uint(nextCrossingT[0] < nextCrossingT[2]) << 1) +
-            (uint(nextCrossingT[1] < nextCrossingT[2]));
+            (uint(cross_history[0] < cross_history[1]) << 2) +
+            (uint(cross_history[0] < cross_history[2]) << 1) +
+            (uint(cross_history[1] < cross_history[2]));
+        // uint k = k | (k << 3);
+        // uint k = k | (k << 6);
+        // uint k = k | (k << 12);
+        // uvec3 k = uvec3(
+        //     ,
+        //     ,
+            
+        // );
+
+        // const ivec3 map[8] = {
+        //     ivec3(0, 0, 1), ivec3(0, 1, 0), ivec3(0, 0, 1), ivec3(0, 1, 0),
+        //     ivec3(0, 0, 1), ivec3(0, 0, 1), ivec3(1, 0, 0), ivec3(1, 0, 0)};
+        // const vec3 vmap[8] = {
+        //     vec3(0, 0, 1), vec3(0, 1, 0), vec3(0, 0, 1), vec3(0, 1, 0),
+        //     vec3(0, 0, 1), vec3(0, 0, 1), vec3(1, 0, 0), vec3(1, 0, 0)};
+        // ivec3 axis = map[k];
+        // vec3 vaxis = vmap[k];
+        // if (hit_max < dot(vaxis, cross_history) - 1.0e-3) break;
+        // cell_id_cur += axis.x * cell_delta.x + axis.y * cell_delta.y + axis.z * cell_delta.z;
+        // cross_history += vaxis * axis_delta;
+
         const uint map[8] = {2, 1, 2, 1, 2, 2, 0, 0};
         uint axis = map[k];
-        if (hit_max < nextCrossingT[axis]) break;
-        cell[axis] += step[axis];
-        if (cell[axis] == exit[axis]) break;
-        nextCrossingT[axis] += deltaT[axis];
-        // out_val.x += deltaT[axis];
-    }
+        if (hit_max < cross_history[axis] - 1.0e-3) break;
+        cell_id_cur += cell_delta[axis];
+        cross_history[axis] += axis_delta[axis];
 
-    // vec3 start = ray_origin + ray_dir * hit_min;
-    // vec3 end = ray_origin + ray_dir * hit_max;
-    // vec3 diff = start - end;
-    // float inv_bin_size = 1.0/g_ubo.ug_bin_size;
-    // int ix = int(diff.x*inv_bin_size);
-    // int iy = int(diff.y*inv_bin_size);
-    // int iz = int(diff.z*inv_bin_size);
-    // uint ox = uint(abs((start.x - g_ubo.ug_size)*inv_bin_size));
-    // uint oy = uint(abs((start.y - g_ubo.ug_size)*inv_bin_size));
-    // uint oz = uint(abs((start.z - g_ubo.ug_size)*inv_bin_size));
-    // int sx = sign(ix);
-    // int sy = sign(iy);
-    // int sz = sign(iz);
-    // iter = 0;
-    // for (int z = 0;; z += sz) {
-    //     for (int y = 0;; y += sy) {
-    //         for (int x = 0;; x += sx) {
-    //             iter++;
-    //             if (iter == 1000) {
-    //                 return;
-    //             }
-    //             if (x == ix) {
-    //                 break;
-    //             }
-    //         }
-    //         if (y == iy) {
-    //             break;
-    //         }
-    //     }
-    //     if (z == ix) {
-    //         break;
-    //     }
-    // }
+
+        // cell_id[axis] += step[axis];
+        // if (
+        //     cell_id_cur <= -1 ||
+        //     cell_id_cur >= g_ubo.ug_bins_count * g_ubo.ug_bins_count * g_ubo.ug_bins_count
+        // ) break;
+
+        // out_val.x += axis_delta[axis];
+    }
 }
 
 void main() {
