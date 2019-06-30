@@ -89,9 +89,10 @@ void iterate(
     ivec3 cell_delta = step * ivec3(1, g_ubo.ug_bins_count, g_ubo.ug_bins_count * g_ubo.ug_bins_count);
     while (true) {
         uint o = cell_id_cur;
-        uint cnt = g_bins.data[2 * o];
-        if (cnt > 0) {
-            iter++;
+        uint bin_offset = g_bins.data[2 * o];
+        if (bin_offset > 0) {
+            uint pnt_cnt = g_bins.data[2 * o + 1];
+            iter += pnt_cnt;
         }
         
         
@@ -169,7 +170,7 @@ void main() {
             color = //ray_box_hit/g_ubo.ug_bin_size/128.0;
             //out_val/32.0;
             // ray_vox_hit*0.1 + 0.1;
-            vec3(float(iter)/g_ubo.ug_bins_count / 1.7);
+            vec3(float(iter)/32.0);
         }
     }
     imageStore(resultImage, ivec2(gl_GlobalInvocationID.xy), vec4(color.xyz, 1.0));

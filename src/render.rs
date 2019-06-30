@@ -96,7 +96,7 @@ mod edge_vs {
             v_depth = wpos.z;
             gl_Position = uniforms.proj * wpos;
             gl_PointSize = 1.0/(1.0e-3 + abs(gl_Position.z))
-            * 60.0;
+            * 30.0;
         }
         "
     }
@@ -173,12 +173,12 @@ mod white_fs {
         layout(location = 0) out vec4 f_color;
         layout(location = 0) in float v_depth;
         void main() {
-            float r = clamp(-v_depth/5.0, 0.0, 1.0);
-            float g = clamp(-v_depth/10.0, 0.0, 1.0);
-            float b = clamp(-v_depth/20.0, 0.0, 1.0);
-            r = 1.1 - pow(r, 2.0);
-            g = 1.1 - pow(g, 2.0);
-            b = 1.1 - pow(b, 2.0);
+            float r = clamp(-v_depth/2.0, 0.0, 1.0);
+            float g = clamp(-v_depth/7.0, 0.0, 1.0);
+            float b = clamp(-v_depth/15.0, 0.0, 1.0);
+            r = 1.01 - pow(r, 1.5);
+            g = 1.01 - pow(g, 1.5);
+            b = 1.01 - pow(b, 1.5);
             f_color = vec4(r, g, b, 1.0);
         }
         "
@@ -424,7 +424,7 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
     let mut camera_zoom = 10.0;
     let mut camera_moved = false;
     let (mut old_mx, mut old_my): (f64, f64) = (0.0, 0.0);
-
+    let mut render_wire = true;
     loop {
         previous_frame.cleanup_finished();
 
@@ -534,7 +534,7 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
         }
 
         tick(state);
-        let ug_bins_count = 32;
+        let ug_bins_count = 64;
         let mut ug_size = 0.0;
         for (i, &pnt) in state.pos.iter().enumerate() {
             ug_size = std::cmp::max(
@@ -604,7 +604,8 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
                 Err(err) => panic!("{:?}", err),
             };
 
-        let command_buffer = if camera_moved
+        let command_buffer = if render_wire
+        // !camera_moved
         // || true
         {
             let vertices = state.pos.iter().cloned();
@@ -620,7 +621,7 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
             for (i, &pnt) in state.pos.iter().enumerate() {
                 ug.put(pnt, i as u32);
             }
-            ug.fill_lines_render(&mut edges);
+            // ug.fill_lines_render(&mut edges);
             let edges = edges.iter().cloned();
             let edges_buffer =
                 CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::all(), edges).unwrap();
@@ -765,7 +766,27 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
                         modifiers,
                     },
                 ..
-            } => done = true,
+            } => {
+                done = match button {
+                    winit::MouseButton::Right => true,
+                    _ => false,
+                }
+            }
+            winit::Event::WindowEvent {
+                event: winit::WindowEvent::KeyboardInput { device_id, input },
+                ..
+            } => {
+                if let Some(vkey) = input.virtual_keycode {
+                    match vkey {
+                        winit::VirtualKeyCode::Space => {
+                            if input.state == winit::ElementState::Pressed {
+                                render_wire = !render_wire;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
             winit::Event::WindowEvent {
                 event:
                     winit::WindowEvent::MouseWheel {

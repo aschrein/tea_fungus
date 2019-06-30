@@ -7,32 +7,32 @@ use rand::distributions::{Distribution, Uniform};
 
 fn main() {
     // let mut state = state::Sim_State::new(state::Sim_Params {
-    //     rest_length: 0.7,
+    //     rest_length: 0.3,
     //     spring_factor: 1000.0,
     //     repell_factor: 1.0,
     //     planar_factor: 0.1,
     //     bulge_factor: 0.1,
-    //     cell_radius: 0.3,
+    //     cell_radius: 0.03,
     //     cell_mass: 0.1,
     //     can_radius: 10.0,
     // });
     // let range = Uniform::new(-3.1, 3.1);
     // let mut rng = rand::thread_rng();
-    // let N = 100;
+    // let N = 1;
     // state.links.insert((0, 0));
     // for i in 0..N {
     //     state.pos.push(state::vec3 {
     //         x: range.sample(&mut rng),
     //         y: range.sample(&mut rng),
-    //         z: range.sample(&mut rng),
+    //         z: 0.0,
     //     });
     //     //state.links.insert((i, (i + 1) % N));
     // }
     let mut state = state::Sim_State::open("blob");
     // state.pos.push(state::vec3 {
-    //         x: 4.0,
-    //         y: 4.0,
-    //         z: 4.0,
+    //         x: 0.0,
+    //         y: 0.0,
+    //         z: 0.0,
     //     });
     //     state.pos.push(state::vec3 {
     //         x: -4.0,
@@ -43,7 +43,7 @@ fn main() {
         &mut state,
         Box::new(|state: &mut state::Sim_State| {
             return;
-            let birth_range = Uniform::new(0, 100);
+            let birth_range = Uniform::new(0, 50);
             let range = Uniform::new(-0.01, 0.01);
             let mut rng = rand::thread_rng();
 
@@ -135,15 +135,16 @@ fn main() {
                     pnt.x -= pnt.x * k;
                     pnt.y -= pnt.y * k;
                 }
-                let force = -pnt.z * 20.0;
+                if pnt.z < 0.0 {
+                    pnt.z = 0.0;
+                }
+                let force = -pnt.z * 1.0;
                 // force_history[i as usize] += f32::abs(force);
-                // pnt.z += force * dt;
-                // if pnt.z > state.params.can_radius {
-                //     pnt.z = state.params.can_radius;
-                // }
-                // if pnt.z < -state.params.can_radius {
-                //     pnt.z = -state.params.can_radius;
-                // }
+                pnt.z += force * dt;
+                if pnt.z > state.params.can_radius {
+                    pnt.z = state.params.can_radius;
+                }
+                
             }
             state.pos = new_pos;
         }),

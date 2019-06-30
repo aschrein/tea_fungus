@@ -6,11 +6,17 @@ glslangValidator --target-env vulkan1.1 -o src/shaders/compute.comp.spv src/shad
 ```
 ## Links
 http://www.andylomas.com/extra/andylomas_paper_cellular_forms_aisb50.pdf
+
 https://twvideo01.ubm-us.net/o1/vault/gdc2018/presentations/Aaltonen_Sebastian_GPU_Based_Clay.pdf
+
 http://www.andylomas.com/extra/andylomas_paper_cellular_forms_aisb50.pdf
+
 https://gpuopen.com/optimizing-gpu-occupancy-resource-usage-large-thread-groups/
+
 https://www.scratchapixel.com/lessons/3d-basic-rendering/minimal-ray-tracer-rendering-simple-shapes/ray-box-intersection
+
 https://www.scratchapixel.com/lessons/advanced-rendering/introduction-acceleration-structure/grid
+
 ## License
 Licensed under either of
  * Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
