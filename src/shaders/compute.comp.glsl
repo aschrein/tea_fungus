@@ -169,7 +169,7 @@ void main() {
             color = //ray_box_hit/g_ubo.ug_bin_size/128.0;
             //out_val/32.0;
             // ray_vox_hit*0.1 + 0.1;
-            vec3(float(iter)/10.0);
+            vec3(float(iter)/g_ubo.ug_bins_count / 1.7);
         }
     }
     imageStore(resultImage, ivec2(gl_GlobalInvocationID.xy), vec4(color.xyz, 1.0));

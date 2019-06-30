@@ -7,12 +7,12 @@ use rand::distributions::{Distribution, Uniform};
 
 fn main() {
     // let mut state = state::Sim_State::new(state::Sim_Params {
-    //     rest_length: 0.3,
-    //     spring_factor: 500.0,
+    //     rest_length: 0.7,
+    //     spring_factor: 1000.0,
     //     repell_factor: 1.0,
     //     planar_factor: 0.1,
     //     bulge_factor: 0.1,
-    //     cell_radius: 0.1,
+    //     cell_radius: 0.3,
     //     cell_mass: 0.1,
     //     can_radius: 10.0,
     // });
@@ -46,25 +46,34 @@ fn main() {
             let birth_range = Uniform::new(0, 100);
             let range = Uniform::new(-0.01, 0.01);
             let mut rng = rand::thread_rng();
-            
 
-            let M = 256;
-            let size = state.params.can_radius;
-           
+            let M = 32;
+            let mut size = 0.0;
+            for (i, &pnt) in state.pos.iter().enumerate() {
+                size = std::cmp::max(
+                    size as u32,
+                    std::cmp::max(
+                        f32::abs(pnt.x) as u32,
+                        std::cmp::max(f32::abs(pnt.y) as u32, f32::abs(pnt.z) as u32),
+                    ),
+                ) as f32;
+                ;
+            }
+            size += 1.0;
             let mut ug = state::UG::new(size, M);
             for (i, &pnt) in state.pos.iter().enumerate() {
                 ug.put(pnt, i as u32);
             }
 
             let bin_size = size * 2.0 / M as f32;
-             let dt = 1.0e-3;
+            let dt = 1.0e-3;
             let mut hit_history: Vec<u32> = Vec::new();
             let mut force_history: Vec<f32> = Vec::new();
             let mut new_pos = state.pos.clone();
             // Repell
             for (i, &pnt) in state.pos.iter().enumerate() {
                 hit_history.clear();
-                ug.traverse(pnt, state.params.cell_radius * 10.0, &mut hit_history);
+                ug.traverse(pnt, state.params.cell_radius * 1.0, &mut hit_history);
                 let mut new_point = pnt;
                 let mut acc_force = 0.0;
                 for &id in &hit_history {
@@ -98,16 +107,14 @@ fn main() {
                 let dist = state.params.rest_length - pnt_1.distance(pnt_2.clone());
                 let force = state.params.spring_factor * state.params.cell_mass * dist;
                 let vforce = dt * (pnt_1 - pnt_2) * force;
-                force_history[i as usize] += force;
-                force_history[j as usize] -= force;
+                force_history[i as usize] += f32::abs(force);
+                force_history[j as usize] += f32::abs(force);
                 new_pos[i as usize] += vforce;
                 new_pos[j as usize] -= vforce;
             }
             // Division
             for (i, &pnt) in state.pos.iter().enumerate() {
-                if birth_range.sample(&mut rng) == 0
-                    && force_history[i as usize] < 300.0
-                {
+                if birth_range.sample(&mut rng) == 0 && force_history[i as usize] < 50.0 {
                     new_pos.push(
                         new_pos[i as usize].clone()
                             + state::vec3 {
@@ -130,17 +137,16 @@ fn main() {
                 }
                 let force = -pnt.z * 20.0;
                 // force_history[i as usize] += f32::abs(force);
-                pnt.z += force * dt;
-                if pnt.z > state.params.can_radius {
-                    pnt.z = state.params.can_radius;
-                }
-                if pnt.z < -state.params.can_radius {
-                    pnt.z = -state.params.can_radius;
-                }
+                // pnt.z += force * dt;
+                // if pnt.z > state.params.can_radius {
+                //     pnt.z = state.params.can_radius;
+                // }
+                // if pnt.z < -state.params.can_radius {
+                //     pnt.z = -state.params.can_radius;
+                // }
             }
-            
             state.pos = new_pos;
         }),
     );
-    //state.dump("blob");
+    // state.dump("blob");
 }

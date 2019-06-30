@@ -604,7 +604,9 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
                 Err(err) => panic!("{:?}", err),
             };
 
-        let command_buffer = if camera_moved {
+        let command_buffer = if camera_moved
+        // || true
+        {
             let vertices = state.pos.iter().cloned();
             let vertex_buffer =
                 CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::all(), vertices)
