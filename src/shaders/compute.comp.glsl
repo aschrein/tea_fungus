@@ -55,6 +55,37 @@ bool intersect_box(
     return t1 > max(t0, 0.0);
 }
 
+float smin( float a, float b, float k )
+{
+    float h = clamp( 0.5+0.5*(b-a)/k, 0.0, 1.0 );
+    return mix( b, a, h ) - k*h*(1.0-h);
+}
+
+float eval_dist(vec3 ray_origin, uint item_start, uint item_end) {
+    float dist = 9999999.0;
+    for (uint item_id = item_start; item_id < item_end; item_id++) {
+        vec3 pos = vec3(g_particles.data[item_id * 3],
+                        g_particles.data[item_id * 3 + 1],
+                        g_particles.data[item_id * 3 + 2]);
+        dist = smin(dist, distance(pos, ray_origin) - 0.1, 0.1);
+    }
+    return dist;
+}
+
+vec3 eval_norm(vec3 pos, uint item_start, uint item_end) {
+    float eps = 1.0e-3;
+    vec3 v1 = vec3( 1.0,-1.0,-1.0);
+    vec3 v2 = vec3(-1.0,-1.0, 1.0);
+    vec3 v3 = vec3(-1.0, 1.0,-1.0);
+    vec3 v4 = vec3( 1.0, 1.0, 1.0);
+	return normalize(
+                    v1 * eval_dist(pos + v1 * eps, item_start, item_end) + 
+					v2 * eval_dist(pos + v2 * eps, item_start, item_end) + 
+					v3 * eval_dist(pos + v3 * eps, item_start, item_end) + 
+					v4 * eval_dist(pos + v4 * eps, item_start, item_end)
+                    );
+}
+
 void iterate(
     vec3 ray_dir,
     vec3 ray_invdir,
@@ -84,7 +115,7 @@ void iterate(
         }
     }
     iter = 0;
-    float min_dist = 100000.0;
+    
     uint cell_id_offset = cell_id[2] * g_ubo.ug_bins_count * g_ubo.ug_bins_count
         + cell_id[1] * g_ubo.ug_bins_count + cell_id[0];
     int cell_id_cur = int(cell_id_offset);
@@ -94,7 +125,7 @@ void iterate(
         uint bin_offset = g_bins.data[2 * o];
         if (bin_offset > 0) {
             uint pnt_cnt = g_bins.data[2 * o + 1];
-            
+            float min_dist = 100000.0;
             for (uint item_id = bin_offset; item_id < bin_offset + pnt_cnt; item_id++) {
                 vec3 pos =
                 //vec3(0.12412, 0.15153, 0.0);
@@ -104,7 +135,7 @@ void iterate(
                 vec3 dr = pos - camera_pos;
                 float dr_dot_v = dot(dr, ray_dir);
                 float c = dot(dr, dr) - dr_dot_v * dr_dot_v;
-                float radius = 0.1;
+                float radius = 0.2;
                 if (c < radius * radius) {
                     // c = sqrt(c);
                     float t = dr_dot_v - sqrt(radius * radius - c);
@@ -117,8 +148,25 @@ void iterate(
                 }
             }
             if (iter == 1) {
-                return;
+                ray_origin = camera_pos + ray_dir * min_dist;
+                float dist = 0.0;
+                for (uint iter_id = 0; iter_id < 4; iter_id++) {
+                    dist = eval_dist(ray_origin, bin_offset, bin_offset + pnt_cnt);
+                    ray_origin += ray_dir * dist;
+                }
+
+                if (dist < 1.0e-2) {
+                    vec3 norm = eval_norm(ray_origin, bin_offset, bin_offset + pnt_cnt);
+                    out_val = norm;//vec3(max(0.0, dot(out_val, vec3(1.4, 0.0, 1.4))));
+                    iter = 1;
+                    return;
+                } else {
+                    iter = 0;
+                }
             }
+            // if (iter == 1) {
+            //     return;
+            // }
             // iter += pnt_cnt;
         }
         
@@ -195,7 +243,7 @@ void main() {
         if (iter > 0) {
             // vec3 ray_vox_hit = ray_box_hit + ray_dir * out_val.x;
             color = //ray_box_hit/g_ubo.ug_bin_size/128.0;
-            out_val;
+            out_val * 0.5 + 0.5;
             // ray_vox_hit*0.1 + 0.1;
             // vec3(float(iter));
         }

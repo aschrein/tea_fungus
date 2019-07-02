@@ -102,47 +102,47 @@ impl UG {
         (bins, points)
     }
     pub fn put(&mut self, pos: vec3, index: u32) {
-        self.put_radius(pos, index, 0.0);
-    }
-    pub fn put_radius(&mut self, pos: vec3, index: u32, radius: f32) {
-        if pos.x > self.size + radius
-            || pos.y > self.size + radius
-            || pos.z > self.size + radius
-            || pos.x < -self.size - radius
-            || pos.y < -self.size - radius
-            || pos.z < -self.size - radius
+        if pos.x > self.size
+            || pos.y > self.size
+            || pos.z > self.size
+            || pos.x < -self.size
+            || pos.y < -self.size
+            || pos.z < -self.size
         {
             std::panic!();
         }
         let bin_size = (2.0 * self.size) / self.bin_count as f32;
-        let idx = radius / bin_size;
-        let mut bin_idx = ((pos.x + self.size) / bin_size) as u32;
-        let mut bin_idy = ((pos.y + self.size) / bin_size) as u32;
-        let mut bin_idz = ((pos.z + self.size) / bin_size) as u32;
-        
-        bin_idx = if bin_idx == self.bin_count {
-            self.bin_count - 1
-        } else {
-            bin_idx
-        };
-        bin_idy = if bin_idy == self.bin_count {
-            self.bin_count - 1
-        } else {
-            bin_idy
-        };
-        bin_idz = if bin_idz == self.bin_count {
-            self.bin_count - 1
-        } else {
-            bin_idz
-        };
-        let flat_id =
-            bin_idx + bin_idy * self.bin_count + bin_idz * self.bin_count * self.bin_count;
-        let bin_id = &mut self.bins_indices[flat_id as usize];
-        if *bin_id == 0 {
-            self.bins.push(Vec::new());
-            *bin_id = self.bins.len() as u32 - 1;
+        // let idx = radius / bin_size;
+        let bin_idx = ((pos.x + self.size) / bin_size) as u32;
+        let bin_idy = ((pos.y + self.size) / bin_size) as u32;
+        let bin_idz = ((pos.z + self.size) / bin_size) as u32;
+        for dx in -1..2 {
+            for dy in -1..2 {
+                for dz in -1..2 {
+                    let mut bin_idx = bin_idx as i32 + dx;
+                    let mut bin_idy = bin_idy as i32 + dy;
+                    let mut bin_idz = bin_idz as i32 + dz;
+                    if bin_idx < 0
+                        || bin_idy < 0
+                        || bin_idz < 0
+                        || bin_idx >= self.bin_count as i32
+                        || bin_idy >= self.bin_count as i32
+                        || bin_idz >= self.bin_count as i32
+                    {
+                        continue;
+                    }
+                    let flat_id =
+                        bin_idx as u32 + bin_idy as u32 * self.bin_count + bin_idz as u32 * self.bin_count * self.bin_count;
+                    let bin_id = &mut self.bins_indices[flat_id as usize];
+                    if *bin_id == 0 {
+                        self.bins.push(Vec::new());
+                        *bin_id = self.bins.len() as u32 - 1;
+                    }
+                    self.bins[*bin_id as usize].push(index);
+                }
+            }
         }
-        self.bins[*bin_id as usize].push(index);
+        
     }
     pub fn fill_lines_render(&self, lines: &mut Vec<vec3>) {
         let bin_size = self.size * 2.0 / self.bin_count as f32;

@@ -157,7 +157,7 @@ mod fs_cs {
             uint data[];
         } g_bins;
         layout(set = 0, binding = 3) buffer Particles {
-            vec3 data[];
+            float data[];
         } g_particles;
 
         void main() {
@@ -534,7 +534,7 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
         }
 
         tick(state);
-        let ug_bins_count = 64;
+        let ug_bins_count = 1;
         let mut ug_size = 0.0;
         for (i, &pnt) in state.pos.iter().enumerate() {
             ug_size = std::cmp::max(
