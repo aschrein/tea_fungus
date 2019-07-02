@@ -424,7 +424,7 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
     let mut camera_zoom = 10.0;
     let mut camera_moved = false;
     let (mut old_mx, mut old_my): (f64, f64) = (0.0, 0.0);
-    let mut render_wire = true;
+    let mut render_wire = false;
     loop {
         previous_frame.cleanup_finished();
 
@@ -621,7 +621,7 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
             for (i, &pnt) in state.pos.iter().enumerate() {
                 ug.put(pnt, i as u32);
             }
-            // ug.fill_lines_render(&mut edges);
+            ug.fill_lines_render(&mut edges);
             let edges = edges.iter().cloned();
             let edges_buffer =
                 CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::all(), edges).unwrap();
@@ -670,6 +670,15 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
             let mut ug = UG::new(ug_size, ug_bins_count);
             for (i, &pnt) in state.pos.iter().enumerate() {
                 ug.put(pnt, i as u32);
+                // ug.put(pnt + vec3{x:0.1, y:0.1, z:-0.1}, i as u32);
+                // ug.put(pnt + vec3{x:-0.1, y:0.1, z:-0.1}, i as u32);
+                // ug.put(pnt + vec3{x:0.1, y:-0.1, z:-0.1}, i as u32);
+                // ug.put(pnt + vec3{x:-0.1, y:-0.1, z:-0.1}, i as u32);
+
+                // ug.put(pnt + vec3{x:0.1, y:0.1, z:0.1}, i as u32);
+                // ug.put(pnt + vec3{x:-0.1, y:0.1, z:0.1}, i as u32);
+                // ug.put(pnt + vec3{x:0.1, y:-0.1, z:0.1}, i as u32);
+                // ug.put(pnt + vec3{x:-0.1, y:-0.1, z:0.1}, i as u32);
             }
             let (bins, point_ids) = ug.pack();
             let mut points: Vec<vec3> = Vec::new();

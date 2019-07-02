@@ -6,19 +6,19 @@ mod render;
 use rand::distributions::{Distribution, Uniform};
 
 fn main() {
-    // let mut state = state::Sim_State::new(state::Sim_Params {
-    //     rest_length: 0.3,
-    //     spring_factor: 1000.0,
-    //     repell_factor: 1.0,
-    //     planar_factor: 0.1,
-    //     bulge_factor: 0.1,
-    //     cell_radius: 0.03,
-    //     cell_mass: 0.1,
-    //     can_radius: 10.0,
-    // });
+    let mut state = state::Sim_State::new(state::Sim_Params {
+        rest_length: 0.3,
+        spring_factor: 1000.0,
+        repell_factor: 1.0,
+        planar_factor: 0.1,
+        bulge_factor: 0.1,
+        cell_radius: 0.03,
+        cell_mass: 0.1,
+        can_radius: 10.0,
+    });
     // let range = Uniform::new(-3.1, 3.1);
     // let mut rng = rand::thread_rng();
-    // let N = 1;
+    // let N = 100;
     // state.links.insert((0, 0));
     // for i in 0..N {
     //     state.pos.push(state::vec3 {
@@ -29,16 +29,16 @@ fn main() {
     //     //state.links.insert((i, (i + 1) % N));
     // }
     let mut state = state::Sim_State::open("blob");
-    // state.pos.push(state::vec3 {
-    //         x: 0.0,
-    //         y: 0.0,
-    //         z: 0.0,
-    //     });
-    //     state.pos.push(state::vec3 {
-    //         x: -4.0,
-    //         y: -4.0,
-    //         z: -4.0,
-    //     });
+    state.pos.push(state::vec3 {
+            x: 0.12412,
+            y: 0.15153,
+            z: 0.0,
+        });
+        state.pos.push(state::vec3 {
+            x: -4.0,
+            y: -4.0,
+            z: -4.0,
+        });
     render::render_main(
         &mut state,
         Box::new(|state: &mut state::Sim_State| {

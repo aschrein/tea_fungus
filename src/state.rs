@@ -102,18 +102,24 @@ impl UG {
         (bins, points)
     }
     pub fn put(&mut self, pos: vec3, index: u32) {
-        if pos.x > self.size
-            || pos.y > self.size
-            || pos.z > self.size
-            || pos.x < -self.size
-            || pos.y < -self.size
-            || pos.z < -self.size
+        self.put_radius(pos, index, 0.0);
+    }
+    pub fn put_radius(&mut self, pos: vec3, index: u32, radius: f32) {
+        if pos.x > self.size + radius
+            || pos.y > self.size + radius
+            || pos.z > self.size + radius
+            || pos.x < -self.size - radius
+            || pos.y < -self.size - radius
+            || pos.z < -self.size - radius
         {
             std::panic!();
         }
-        let mut bin_idx = (self.bin_count as f32 * (pos.x + self.size) / (2.0 * self.size)) as u32;
-        let mut bin_idy = (self.bin_count as f32 * (pos.y + self.size) / (2.0 * self.size)) as u32;
-        let mut bin_idz = (self.bin_count as f32 * (pos.z + self.size) / (2.0 * self.size)) as u32;
+        let bin_size = (2.0 * self.size) / self.bin_count as f32;
+        let idx = radius / bin_size;
+        let mut bin_idx = ((pos.x + self.size) / bin_size) as u32;
+        let mut bin_idy = ((pos.y + self.size) / bin_size) as u32;
+        let mut bin_idz = ((pos.z + self.size) / bin_size) as u32;
+        
         bin_idx = if bin_idx == self.bin_count {
             self.bin_count - 1
         } else {

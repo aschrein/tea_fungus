@@ -19,7 +19,7 @@ layout(set = 0, binding = 2) buffer Bins {
     uint data[];
 } g_bins;
 layout(set = 0, binding = 3) buffer Particles {
-    vec3 data[];
+    float data[];
 } g_particles;
 
 bool intersect_plane(vec3 p, vec3 n, vec3 ray, vec3 ray_origin, out vec3 hit) {
@@ -59,11 +59,12 @@ void iterate(
     vec3 ray_dir,
     vec3 ray_invdir,
     vec3 ray_origin,
+    vec3 camera_pos,
     float hit_max,
     out uint iter,
     out vec3 out_val) {
     ivec3 exit, step, cell_id;
-    vec3 axis_delta, cross_history;
+    vec3 axis_delta, axis_distance;
     for (uint i = 0; i < 3; ++i) {
         // convert ray starting point to cell_id coordinates                                                                                                                                                 
         float ray_offset = ray_origin[i] + g_ubo.ug_size;
@@ -71,18 +72,19 @@ void iterate(
         // out_val[i] = cell_id[i];
         if (ray_dir[i] < 0) {
             axis_delta[i] = -g_ubo.ug_bin_size * ray_invdir[i];
-            cross_history[i] = (cell_id[i] * g_ubo.ug_bin_size - ray_offset) * ray_invdir[i];
+            axis_distance[i] = (cell_id[i] * g_ubo.ug_bin_size - ray_offset) * ray_invdir[i];
             // exit[i] = -1;
             step[i] = -1;
         }
         else {
             axis_delta[i] = g_ubo.ug_bin_size * ray_invdir[i];
-            cross_history[i] = ((cell_id[i] + 1)  * g_ubo.ug_bin_size - ray_offset) * ray_invdir[i];
+            axis_distance[i] = ((cell_id[i] + 1)  * g_ubo.ug_bin_size - ray_offset) * ray_invdir[i];
             // exit[i] = int();
             step[i] = 1;
         }
     }
     iter = 0;
+    float min_dist = 100000.0;
     uint cell_id_offset = cell_id[2] * g_ubo.ug_bins_count * g_ubo.ug_bins_count
         + cell_id[1] * g_ubo.ug_bins_count + cell_id[0];
     int cell_id_cur = int(cell_id_offset);
@@ -92,15 +94,40 @@ void iterate(
         uint bin_offset = g_bins.data[2 * o];
         if (bin_offset > 0) {
             uint pnt_cnt = g_bins.data[2 * o + 1];
-            iter += pnt_cnt;
+            
+            for (uint item_id = bin_offset; item_id < bin_offset + pnt_cnt; item_id++) {
+                vec3 pos =
+                //vec3(0.12412, 0.15153, 0.0);
+                vec3(g_particles.data[item_id * 3],
+                g_particles.data[item_id * 3 + 1],
+                g_particles.data[item_id * 3 + 2]);
+                vec3 dr = pos - camera_pos;
+                float dr_dot_v = dot(dr, ray_dir);
+                float c = dot(dr, dr) - dr_dot_v * dr_dot_v;
+                float radius = 0.1;
+                if (c < radius * radius) {
+                    // c = sqrt(c);
+                    float t = dr_dot_v - sqrt(radius * radius - c);
+                    if (t < min_dist) {
+                        vec3 norm = normalize(camera_pos + ray_dir * t - pos);
+                        iter = 1;
+                        out_val = vec3(max(0.0, dot(norm, vec3(1.4, 0.0, 1.4))));
+                        min_dist = t;
+                    }
+                }
+            }
+            if (iter == 1) {
+                return;
+            }
+            // iter += pnt_cnt;
         }
         
         
 
         uint k =
-            (uint(cross_history[0] < cross_history[1]) << 2) +
-            (uint(cross_history[0] < cross_history[2]) << 1) +
-            (uint(cross_history[1] < cross_history[2]));
+            (uint(axis_distance[0] < axis_distance[1]) << 2) +
+            (uint(axis_distance[0] < axis_distance[2]) << 1) +
+            (uint(axis_distance[1] < axis_distance[2]));
         // uint k = k | (k << 3);
         // uint k = k | (k << 6);
         // uint k = k | (k << 12);
@@ -118,15 +145,15 @@ void iterate(
         //     vec3(0, 0, 1), vec3(0, 0, 1), vec3(1, 0, 0), vec3(1, 0, 0)};
         // ivec3 axis = map[k];
         // vec3 vaxis = vmap[k];
-        // if (hit_max < dot(vaxis, cross_history) - 1.0e-3) break;
+        // if (hit_max < dot(vaxis, axis_distance) - 1.0e-3) break;
         // cell_id_cur += axis.x * cell_delta.x + axis.y * cell_delta.y + axis.z * cell_delta.z;
-        // cross_history += vaxis * axis_delta;
+        // axis_distance += vaxis * axis_delta;
 
         const uint map[8] = {2, 1, 2, 1, 2, 2, 0, 0};
         uint axis = map[k];
-        if (hit_max < cross_history[axis] - 1.0e-3) break;
+        if (hit_max < axis_distance[axis] - 1.0e-3) break;
         cell_id_cur += cell_delta[axis];
-        cross_history[axis] += axis_delta[axis];
+        axis_distance[axis] += axis_delta[axis];
 
 
         // cell_id[axis] += step[axis];
@@ -164,13 +191,13 @@ void main() {
         uint iter = 0;
         vec3 ray_box_hit = ray_origin + ray_dir * hit_min;
         vec3 out_val = vec3(0);
-        iterate(ray_dir, ray_invdir, ray_box_hit, hit_max - hit_min, iter, out_val);
+        iterate(ray_dir, ray_invdir, ray_box_hit, ray_origin, hit_max - hit_min, iter, out_val);
         if (iter > 0) {
             // vec3 ray_vox_hit = ray_box_hit + ray_dir * out_val.x;
             color = //ray_box_hit/g_ubo.ug_bin_size/128.0;
-            //out_val/32.0;
+            out_val;
             // ray_vox_hit*0.1 + 0.1;
-            vec3(float(iter)/32.0);
+            // vec3(float(iter));
         }
     }
     imageStore(resultImage, ivec2(gl_GlobalInvocationID.xy), vec4(color.xyz, 1.0));
