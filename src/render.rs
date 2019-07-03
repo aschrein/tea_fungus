@@ -40,7 +40,7 @@ use vulkano::sync;
 use vulkano::sync::GpuFuture;
 use vulkano_win::VkSurfaceBuild;
 use winit::Window;
-
+use vulkano::query::*;
 use cgmath::{Matrix, Matrix3, Matrix4, Point3, Rad, Vector3};
 
 use crate::state::*;
@@ -424,6 +424,7 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
     let mut camera_zoom = 10.0;
     let mut camera_moved = false;
     let (mut old_mx, mut old_my): (f64, f64) = (0.0, 0.0);
+    let mut ug_cell_size = 0.1;
     let mut render_wire = false;
     loop {
         previous_frame.cleanup_finished();
@@ -538,16 +539,17 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
         let mut ug_size = 0.0;
         for (i, &pnt) in state.pos.iter().enumerate() {
             ug_size = std::cmp::max(
-                ug_size as u32,
+                (ug_size) as u32,
                 std::cmp::max(
-                    f32::abs(pnt.x) as u32,
-                    std::cmp::max(f32::abs(pnt.y) as u32, f32::abs(pnt.z) as u32),
+                    f32::abs(pnt.x/ug_cell_size) as u32,
+                    std::cmp::max(f32::abs(pnt.y/ug_cell_size) as u32, f32::abs(pnt.z/ug_cell_size) as u32),
                 ),
             ) as f32;
                 ;
         }
         ug_size += 1.0;
-        let ug_bins_count = (ug_size / 0.2) as u32;
+        let ug_bins_count = (ug_size) as u32;
+        ug_size *= ug_cell_size;
         let (uniform_buffer_subbuffer, cs_uniform_buffer_subbuffer) = {
             let elapsed = rotation_start.elapsed();
             // let rotation =
@@ -692,7 +694,7 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
             let bins = bins.iter().cloned();
             let bins_buffer =
                 CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::all(), bins).unwrap();
-
+            
             AutoCommandBufferBuilder::primary_one_time_submit(device.clone(), queue.family())
                 .unwrap()
                 .dispatch(
@@ -793,6 +795,17 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
                                 render_wire = !render_wire;
                             }
                         }
+                        winit::VirtualKeyCode::Up => {
+                            if input.state == winit::ElementState::Pressed {
+                                ug_cell_size += 0.01;
+                            }
+                        }
+                        winit::VirtualKeyCode::Down => {
+                            if input.state == winit::ElementState::Pressed {
+                                ug_cell_size -= 0.01;
+                                ug_cell_size = if ug_cell_size < 0.01 {0.01} else {ug_cell_size};
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -808,7 +821,7 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
                 ..
             } => match &delta {
                 winit::MouseScrollDelta::LineDelta(dx, dy) => {
-                    camera_zoom += dy;
+                    camera_zoom += camera_zoom * dy * 0.1;
                     camera_moved = true;
                 }
                 winit::MouseScrollDelta::PixelDelta(pd) => {

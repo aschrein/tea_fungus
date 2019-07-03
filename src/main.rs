@@ -7,34 +7,34 @@ use rand::distributions::{Distribution, Uniform};
 use std::collections::HashSet;
 
 fn main() {
-    // let mut state = state::Sim_State::new(state::Sim_Params {
-    //     rest_length: 0.2,
-    //     spring_factor: 1000.0,
-    //     repell_factor: 1.0,
-    //     planar_factor: 0.1,
-    //     bulge_factor: 0.1,
-    //     cell_radius: 0.03,
-    //     cell_mass: 0.1,
-    //     can_radius: 10.0,
-    // });
-    // let range = Uniform::new(-1.1, 1.1);
-    // let mut rng = rand::thread_rng();
-    // let N = 1;
-    // state.links.insert((0, 0));
-    //      state.pos.push(state::vec3 {
-    //         x: 0.0,
-    //         y: 0.0,
-    //         z: 0.0,
-    //     });
-    // for i in 0..N {
-    //     state.pos.push(state::vec3 {
-    //         x: range.sample(&mut rng),
-    //         y: range.sample(&mut rng),
-    //         z: range.sample(&mut rng),
-    //     });
-    //     //state.links.insert((i, (i + 1) % N));
-    // }
-    let mut state = state::Sim_State::open("blob");
+    let mut state = state::Sim_State::new(state::Sim_Params {
+        rest_length: 0.2,
+        spring_factor: 1000.0,
+        repell_factor: 1.0,
+        planar_factor: 0.1,
+        bulge_factor: 0.1,
+        cell_radius: 0.1,
+        cell_mass: 0.1,
+        can_radius: 10.0,
+    });
+    let range = Uniform::new(-1.1, 1.1);
+    let mut rng = rand::thread_rng();
+    let N = 1;
+    state.links.insert((0, 0));
+         state.pos.push(state::vec3 {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        });
+    for i in 0..N {
+        state.pos.push(state::vec3 {
+            x: range.sample(&mut rng),
+            y: range.sample(&mut rng),
+            z: range.sample(&mut rng),
+        });
+        //state.links.insert((i, (i + 1) % N));
+    }
+    // let mut state = state::Sim_State::open("blob");
     // state.pos.push(state::vec3 {
     //         x: 0.12412,
     //         y: 0.15153,
@@ -48,7 +48,7 @@ fn main() {
     render::render_main(
         &mut state,
         Box::new(|state: &mut state::Sim_State| {
-            return;
+            // return;
             let birth_range = Uniform::new(0, 10);
             let range = Uniform::new(-0.01, 0.01);
             let mut rng = rand::thread_rng();
@@ -88,7 +88,7 @@ fn main() {
                     }
                     let pnt_1 = state.pos[id as usize];
                     let dist = pnt.distance(pnt_1);
-                    if dist < state.params.rest_length * 1.0 && id > i as u32 {
+                    if dist < state.params.rest_length * 0.9 && id > i as u32 {
                         state.links.insert((i as u32, id));
                     }
                     // if dist > state.params.cell_radius {
@@ -158,7 +158,7 @@ fn main() {
             }
             // Division
             for (i, &pnt) in state.pos.iter().enumerate() {
-                if birth_range.sample(&mut rng) == 0 && force_history[i as usize] < 150.0 {
+                if birth_range.sample(&mut rng) == 0 && force_history[i as usize] < 20.0 {
                     new_pos.push(
                         new_pos[i as usize].clone()
                             + state::vec3 {
@@ -179,14 +179,17 @@ fn main() {
                     pnt.x -= pnt.x * k;
                     pnt.y -= pnt.y * k;
                 }
-                if pnt.z < 0.0 {
-                    pnt.z = 0.0;
-                }
-                let force = -pnt.z * 1.0;
+                // if pnt.z < 0.0 {
+                //     pnt.z = 0.0;
+                // }
+                // let force = -pnt.z * 4.0;
                 // force_history[i as usize] += f32::abs(force);
-                pnt.z += force * dt;
+                // pnt.z += force * dt;
                 if pnt.z > state.params.can_radius {
                     pnt.z = state.params.can_radius;
+                }
+                if pnt.z < -state.params.can_radius {
+                    pnt.z = -state.params.can_radius;
                 }
                 
             }
