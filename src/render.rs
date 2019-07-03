@@ -71,7 +71,7 @@ mod point_vs {
             // v_normal = transpose(inverse(mat3(worldview))) * normal;
             gl_Position = uniforms.proj * wpos;
             gl_PointSize = 1.0/(1.0e-3 + abs(gl_Position.z))
-            * 40.0;
+            * 10.0;
         }
         "
     }
@@ -95,8 +95,8 @@ mod edge_vs {
             vec4 wpos = worldview * vec4(position, 1.0);
             v_depth = wpos.z;
             gl_Position = uniforms.proj * wpos;
-            gl_PointSize = 1.0/(1.0e-3 + abs(gl_Position.z))
-            * 30.0;
+            gl_PointSize = 1.0;//1.0/(1.0e-5 + abs(gl_Position.z))
+            //* 4.0;
         }
         "
     }
@@ -173,8 +173,8 @@ mod white_fs {
         layout(location = 0) out vec4 f_color;
         layout(location = 0) in float v_depth;
         void main() {
-            float r = clamp(-v_depth/2.0, 0.0, 1.0);
-            float g = clamp(-v_depth/7.0, 0.0, 1.0);
+            float r = clamp(-v_depth/6.0, 0.0, 1.0);
+            float g = clamp(-v_depth/8.0, 0.0, 1.0);
             float b = clamp(-v_depth/15.0, 0.0, 1.0);
             r = 1.01 - pow(r, 1.5);
             g = 1.01 - pow(g, 1.5);
@@ -534,7 +534,7 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
         }
 
         tick(state);
-        let ug_bins_count = 1;
+        
         let mut ug_size = 0.0;
         for (i, &pnt) in state.pos.iter().enumerate() {
             ug_size = std::cmp::max(
@@ -547,6 +547,7 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
                 ;
         }
         ug_size += 1.0;
+        let ug_bins_count = (ug_size / 0.2) as u32;
         let (uniform_buffer_subbuffer, cs_uniform_buffer_subbuffer) = {
             let elapsed = rotation_start.elapsed();
             // let rotation =

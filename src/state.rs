@@ -190,7 +190,7 @@ impl UG {
             }
         }
     }
-    pub fn traverse(&self, pos: vec3, radius: f32, hit_history: &mut Vec<u32>) {
+    pub fn traverse(&self, pos: vec3, radius: f32, hit_history: &mut HashSet<u32>) {
         if pos.x > self.size
             || pos.y > self.size
             || pos.z > self.size
@@ -227,7 +227,7 @@ impl UG {
                     let bin_id = self.bins_indices[flat_id as usize];
                     if bin_id != 0 {
                         for item in &self.bins[bin_id as usize] {
-                            hit_history.push(*item);
+                            hit_history.insert(*item);
                         }
                     }
                 }
@@ -273,7 +273,7 @@ fn UG_test() {
             y: range.sample(&mut rng),
             z: range.sample(&mut rng),
         };
-        let mut hit_history: Vec<u32> = Vec::new();
+        let mut hit_history: HashSet<u32> = HashSet::new();
         ug.traverse(rand_point, size * 2.0, &mut hit_history);
         assert_eq!(hit_history.len(), N as usize);
     }
@@ -283,7 +283,7 @@ fn UG_test() {
             y: range.sample(&mut rng),
             z: range.sample(&mut rng),
         };
-        let mut hit_history: Vec<u32> = Vec::new();
+        let mut hit_history: HashSet<u32> = HashSet::new();
         let range = Uniform::new(0.5, size);
         let dist = range.sample(&mut rng);
         let portion = (dist) * (dist) / (size * size);
