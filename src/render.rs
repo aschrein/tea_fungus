@@ -17,6 +17,7 @@ use vulkano::image::attachment::AttachmentImage;
 use vulkano::image::*;
 use vulkano::image::{Dimensions, StorageImage, SwapchainImage};
 
+use cgmath::{Matrix, Matrix3, Matrix4, Point3, Rad, Vector3};
 use std::ffi::CStr;
 use std::fs::File;
 use std::io::Read;
@@ -32,6 +33,7 @@ use vulkano::pipeline::shader::{
 use vulkano::pipeline::vertex::{SingleBufferDefinition, TwoBuffersDefinition};
 use vulkano::pipeline::viewport::Viewport;
 use vulkano::pipeline::{ComputePipeline, GraphicsPipeline, GraphicsPipelineAbstract};
+use vulkano::query::*;
 use vulkano::swapchain;
 use vulkano::swapchain::{
     AcquireError, PresentMode, SurfaceTransform, Swapchain, SwapchainCreationError,
@@ -40,8 +42,6 @@ use vulkano::sync;
 use vulkano::sync::GpuFuture;
 use vulkano_win::VkSurfaceBuild;
 use winit::Window;
-use vulkano::query::*;
-use cgmath::{Matrix, Matrix3, Matrix4, Point3, Rad, Vector3};
 
 use crate::state::*;
 use std::iter;
@@ -535,14 +535,16 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
         }
 
         tick(state);
-        
         let mut ug_size = 0.0;
         for (i, &pnt) in state.pos.iter().enumerate() {
             ug_size = std::cmp::max(
                 (ug_size) as u32,
                 std::cmp::max(
-                    f32::abs(pnt.x/ug_cell_size) as u32,
-                    std::cmp::max(f32::abs(pnt.y/ug_cell_size) as u32, f32::abs(pnt.z/ug_cell_size) as u32),
+                    f32::abs(pnt.x / ug_cell_size) as u32,
+                    std::cmp::max(
+                        f32::abs(pnt.y / ug_cell_size) as u32,
+                        f32::abs(pnt.z / ug_cell_size) as u32,
+                    ),
                 ),
             ) as f32;
                 ;
@@ -629,7 +631,106 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
             let edges_buffer =
                 CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::all(), edges).unwrap();
 
+            let pipeline_1 = Arc::new({
+                mod cs {
+                    vulkano_shaders::shader! {
+                        ty: "compute",
+                        src: "
+                    #version 450
+
+                    layout(local_size_x = 128, local_size_y = 1, local_size_z = 1) in;
+
+                    layout(set = 0, binding = 0) buffer Data {
+                        uint data[];
+                    } data;
+                    layout(set = 0, binding = 1) buffer DynConstants {
+                        uint counter;
+                        uint payload_size;
+                    } dc;
+                    void main() {
+                        while(true) {
+                            uint id = atomicAdd(dc.counter, 1024);
+                            uint limit = min(dc.payload_size, id + 1024);
+                            for (; id < limit; id++)
+                                data.data[id] *= 12;
+                            if (limit >= dc.payload_size)
+                                break;
+                        }
+                    }"
+                    }
+                }
+                let shader = cs::Shader::load(device.clone()).unwrap();
+                ComputePipeline::new(device.clone(), &shader.main_entry_point(), &()).unwrap()
+            });
+            let TEST_LIMIT = 2 << 20;
+            let data_buffer = {
+                let data_iter = (0..TEST_LIMIT).map(|n| n);
+                CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::all(), data_iter)
+                    .unwrap()
+            };
+            let dynconst_buffer = {
+                let data_iter = vec![0u32, TEST_LIMIT];
+                CpuAccessibleBuffer::from_iter(
+                    device.clone(),
+                    BufferUsage::all(),
+                    data_iter.iter().cloned(),
+                )
+                .unwrap()
+            };
+            let pipeline_2 = Arc::new({
+                mod cs {
+                    vulkano_shaders::shader! {
+                        ty: "compute",
+                        src: "
+                    #version 450
+
+                    layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+                    layout(set = 0, binding = 0) buffer Data {
+                        uint data[];
+                    } data;
+
+                    void main() {
+                        uint idx = gl_GlobalInvocationID.x;
+                        data.data[idx] *= 12;
+                    }"
+                    }
+                }
+                let shader = cs::Shader::load(device.clone()).unwrap();
+                ComputePipeline::new(device.clone(), &shader.main_entry_point(), &()).unwrap()
+            });
+
             AutoCommandBufferBuilder::primary_one_time_submit(device.clone(), queue.family())
+                .unwrap()
+                .dispatch(
+                    [TEST_LIMIT/256, 1, 1],
+                    pipeline_2.clone(),
+                    Arc::new(
+                        PersistentDescriptorSet::start(pipeline_2.clone(), 0)
+                            .add_buffer(data_buffer.clone())
+                            .unwrap()
+                            .build()
+                            .unwrap(),
+                    )
+                    .clone(),
+                    (),
+                )
+                .unwrap()
+                .dispatch(
+                    [256, 1, 1],
+                    pipeline_1.clone(),
+                    Arc::new(
+                        PersistentDescriptorSet::start(pipeline_1.clone(), 0)
+                            .add_buffer(data_buffer.clone())
+                            .unwrap()
+                            .add_buffer(dynconst_buffer.clone())
+                            .unwrap()
+                            .build()
+                            .unwrap(),
+                    )
+                    .clone(),
+                    (),
+                )
                 .unwrap()
                 .begin_render_pass(
                     framebuffers[image_num].clone(),
@@ -694,7 +795,6 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
             let bins = bins.iter().cloned();
             let bins_buffer =
                 CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::all(), bins).unwrap();
-            
             AutoCommandBufferBuilder::primary_one_time_submit(device.clone(), queue.family())
                 .unwrap()
                 .dispatch(
@@ -803,7 +903,11 @@ pub fn render_main(state: &mut Sim_State, tick: Box<Fn(&mut Sim_State)>) {
                         winit::VirtualKeyCode::Down => {
                             if input.state == winit::ElementState::Pressed {
                                 ug_cell_size -= 0.01;
-                                ug_cell_size = if ug_cell_size < 0.01 {0.01} else {ug_cell_size};
+                                ug_cell_size = if ug_cell_size < 0.01 {
+                                    0.01
+                                } else {
+                                    ug_cell_size
+                                };
                             }
                         }
                         _ => {}

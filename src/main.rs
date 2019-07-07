@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate vulkano;
 pub mod state;
+pub mod vulkan_tests;
 use cgmath::*;
 mod render;
 use rand::distributions::{Distribution, Uniform};
